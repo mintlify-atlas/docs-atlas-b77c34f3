@@ -1,0 +1,182 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Drizzle ORM",
+  "projectDescription": "Headless TypeScript ORM for SQL databases with zero dependencies and full type safety",
+  "theme": "mint",
+  "primaryColor": "#C5F74F",
+  "lightColor": "#C5F74F",
+  "darkColor": "#A5D840",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core/schema-declaration",
+              "core/database-connection",
+              "core/queries",
+              "core/relations",
+              "core/migrations",
+              "core/transactions"
+            ]
+          },
+          {
+            "group": "Database Drivers",
+            "pages": [
+              "drivers/overview",
+              "drivers/postgresql",
+              "drivers/mysql",
+              "drivers/sqlite"
+            ]
+          },
+          {
+            "group": "Query Builders",
+            "pages": [
+              "queries/select",
+              "queries/insert",
+              "queries/update",
+              "queries/delete",
+              "queries/joins",
+              "queries/aggregations",
+              "queries/subqueries"
+            ]
+          },
+          {
+            "group": "Schema Definition",
+            "pages": [
+              "schema/tables",
+              "schema/columns",
+              "schema/constraints",
+              "schema/indexes",
+              "schema/views"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "advanced/relational-queries",
+              "advanced/prepared-statements",
+              "advanced/custom-types",
+              "advanced/sql-expressions",
+              "advanced/performance"
+            ]
+          },
+          {
+            "group": "Ecosystem",
+            "pages": [
+              "ecosystem/drizzle-kit",
+              "ecosystem/drizzle-studio",
+              "ecosystem/drizzle-seed",
+              "ecosystem/schema-validation"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/serverless",
+              "guides/edge-runtime",
+              "guides/prisma-migration",
+              "guides/best-practices"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "PostgreSQL",
+            "pages": [
+              "api/postgresql/database",
+              "api/postgresql/table",
+              "api/postgresql/columns",
+              "api/postgresql/query-builders",
+              "api/postgresql/utilities"
+            ]
+          },
+          {
+            "group": "MySQL",
+            "pages": [
+              "api/mysql/database",
+              "api/mysql/table",
+              "api/mysql/columns",
+              "api/mysql/query-builders",
+              "api/mysql/utilities"
+            ]
+          },
+          {
+            "group": "SQLite",
+            "pages": [
+              "api/sqlite/database",
+              "api/sqlite/table",
+              "api/sqlite/columns",
+              "api/sqlite/query-builders",
+              "api/sqlite/utilities"
+            ]
+          },
+          {
+            "group": "Core APIs",
+            "pages": [
+              "api/core/sql",
+              "api/core/relations",
+              "api/core/transactions",
+              "api/core/migrations"
+            ]
+          },
+          {
+            "group": "Drizzle Kit",
+            "pages": [
+              "api/kit/commands",
+              "api/kit/configuration",
+              "api/kit/migrations"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-safe SQL query builder with full TypeScript support",
+    "Support for PostgreSQL, MySQL, and SQLite databases",
+    "Zero dependencies and tree-shakeable at ~7.4kb minified+gzipped",
+    "SQL-like and relational query APIs",
+    "Automatic migrations with Drizzle Kit",
+    "Works in Node.js, Bun, Deno, Cloudflare Workers, and browsers",
+    "Support for serverless databases (Neon, Turso, PlanetScale, Vercel Postgres)",
+    "Schema validation with Zod, Valibot, TypeBox, and ArkType",
+    "Database seeding utilities with Drizzle Seed",
+    "Visual database browser with Drizzle Studio"
+  ],
+  "publicApiSurface": [
+    "drizzle() - Create database instance",
+    "pgTable() - Define PostgreSQL table",
+    "mysqlTable() - Define MySQL table",
+    "sqliteTable() - Define SQLite table",
+    "select() - SELECT query builder",
+    "insert() - INSERT query builder",
+    "update() - UPDATE query builder",
+    "delete() - DELETE query builder",
+    "relations() - Define table relations",
+    "sql - Raw SQL template tag",
+    "eq(), ne(), gt(), lt(), gte(), lte() - SQL operators",
+    "and(), or(), not() - Logical operators",
+    "migrate() - Run migrations",
+    "transaction() - Execute transactions",
+    "serial(), integer(), varchar(), text(), boolean(), timestamp() - Column types",
+    "primaryKey(), foreignKey(), unique(), index() - Constraints",
+    "pgSchema() - PostgreSQL schema namespaces",
+    "prepare() - Prepared statements",
+    ".$with() - Common Table Expressions (CTEs)",
+    ".$dynamic() - Dynamic query building"
+  ]
+}
