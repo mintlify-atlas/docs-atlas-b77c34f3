@@ -1,0 +1,507 @@
+---
+title: 'SQLite Drivers'
+description: 'Complete guide to SQLite database drivers in Drizzle ORM'
+---
+
+# SQLite Drivers
+
+Drizzle ORM supports SQLite through multiple drivers optimized for different JavaScript runtimes and deployment environments.
+
+## better-sqlite3
+
+Synchronous SQLite driver for Node.js with excellent performance.
+
+### Installation
+
+```bash
+npm install drizzle-orm better-sqlite3
+npm install -D @types/better-sqlite3
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Client Instance
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db');
+const db = drizzle(sqlite);
+```
+
+```typescript In-Memory Database
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database(':memory:');
+const db = drizzle(sqlite);
+```
+
+```typescript With Schema
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import * as schema from './schema';
+
+const sqlite = new Database('sqlite.db');
+const db = drizzle(sqlite, { schema });
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: {
+    source: 'sqlite.db',
+    readonly: false,
+    fileMustExist: false,
+    timeout: 5000,
+    verbose: console.log,
+  },
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Database Options
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db', {
+  readonly: false,
+  fileMustExist: false,
+  timeout: 5000,
+  verbose: console.log,
+});
+
+const db = drizzle(sqlite);
+```
+
+### Performance Optimizations
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db');
+
+// Optimize for performance
+sqlite.pragma('journal_mode = WAL');
+sqlite.pragma('synchronous = normal');
+sqlite.pragma('cache_size = 10000');
+sqlite.pragma('temp_store = memory');
+
+const db = drizzle(sqlite);
+```
+
+### WAL Mode (Write-Ahead Logging)
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db');
+sqlite.pragma('journal_mode = WAL');
+
+const db = drizzle(sqlite);
+```
+
+<Note>
+WAL mode significantly improves write performance and allows concurrent reads during writes.
+</Note>
+
+### Accessing the Client
+
+```typescript
+const db = drizzle(sqlite);
+
+// Access underlying better-sqlite3 client
+db.$client.exec('PRAGMA foreign_keys = ON');
+```
+
+---
+
+## libSQL (Turso)
+
+Driver for libSQL databases, including Turso's edge database platform.
+
+### Installation
+
+```bash
+npm install drizzle-orm @libsql/client
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Turso (Remote)
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
+
+const db = drizzle(client);
+```
+
+```typescript Local SQLite
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+
+const client = createClient({
+  url: 'file:local.db',
+});
+
+const db = drizzle(client);
+```
+
+```typescript In-Memory
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+
+const client = createClient({
+  url: ':memory:',
+});
+
+const db = drizzle(client);
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/libsql';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: {
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  },
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Embedded Replicas (Hybrid)
+
+Combine local SQLite with remote Turso database for optimal performance:
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+
+const client = createClient({
+  url: 'file:local.db',
+  syncUrl: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+  syncInterval: 60, // Sync every 60 seconds
+});
+
+const db = drizzle(client);
+
+// Manually sync
+await client.sync();
+```
+
+### Environment Variables (Turso)
+
+Get these from your Turso dashboard:
+
+```bash
+TURSO_DATABASE_URL="libsql://[database]-[org].turso.io"
+TURSO_AUTH_TOKEN="eyJ..."
+```
+
+### Advanced Options
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+  
+  // Connection settings
+  intMode: 'number', // or 'bigint' or 'string'
+  
+  // Custom fetch
+  fetch: (url, init) => fetch(url, {
+    ...init,
+    priority: 'high',
+  }),
+});
+
+const db = drizzle(client);
+```
+
+---
+
+## Cloudflare D1
+
+SQLite driver for Cloudflare Workers and Pages.
+
+### Installation
+
+```bash
+npm install drizzle-orm
+```
+
+### Basic Usage
+
+```typescript
+import { drizzle } from 'drizzle-orm/d1';
+import * as schema from './schema';
+
+export interface Env {
+  DB: D1Database;
+}
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const db = drizzle(env.DB, { schema });
+    
+    const users = await db.select().from(schema.users);
+    return Response.json(users);
+  },
+};
+```
+
+### Worker Configuration
+
+In your `wrangler.toml`:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "my-database"
+database_id = "your-database-id"
+```
+
+### Batch Queries
+
+D1 supports efficient batch operations:
+
+```typescript
+import { drizzle } from 'drizzle-orm/d1';
+import { users, posts } from './schema';
+
+const db = drizzle(env.DB);
+
+const results = await db.batch([
+  db.select().from(users),
+  db.select().from(posts),
+  db.insert(users).values({ name: 'John' }),
+]);
+```
+
+### Local Development
+
+```bash
+# Create local D1 database
+npx wrangler d1 create my-database
+
+# Run migrations locally
+npx wrangler d1 migrations apply my-database --local
+
+# Start local dev server
+npx wrangler dev
+```
+
+<Warning>
+D1 is optimized for edge deployment. For local development or Node.js, use better-sqlite3 or libSQL instead.
+</Warning>
+
+---
+
+## Choosing a Driver
+
+<Tabs>
+  <Tab title="Node.js">
+    **Recommended: better-sqlite3**
+
+    - Synchronous API (simpler code)
+    - Excellent performance
+    - Full SQLite feature support
+    - Native Node.js addon
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/better-sqlite3';
+    import Database from 'better-sqlite3';
+
+    const sqlite = new Database('sqlite.db');
+    const db = drizzle(sqlite);
+    ```
+  </Tab>
+  <Tab title="Distributed/Edge">
+    **Recommended: libSQL (Turso)**
+
+    - Edge-optimized SQLite
+    - Automatic replication
+    - Global distribution
+    - HTTP-based or embedded replicas
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/libsql';
+    import { createClient } from '@libsql/client';
+
+    const client = createClient({
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+
+    const db = drizzle(client);
+    ```
+  </Tab>
+  <Tab title="Cloudflare Workers">
+    **Required: Cloudflare D1**
+
+    - Built into Cloudflare Workers
+    - No installation needed
+    - Global edge distribution
+    - Integrated with Wrangler
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/d1';
+
+    const db = drizzle(env.DB);
+    ```
+  </Tab>
+</Tabs>
+
+## Additional SQLite Drivers
+
+### Bun SQLite
+
+For Bun runtime:
+
+```bash
+npm install drizzle-orm
+```
+
+```typescript
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { Database } from 'bun:sqlite';
+
+const sqlite = new Database('sqlite.db');
+const db = drizzle(sqlite);
+```
+
+### Expo SQLite
+
+For React Native with Expo:
+
+```bash
+npm install drizzle-orm expo-sqlite
+```
+
+```typescript
+import { drizzle } from 'drizzle-orm/expo-sqlite';
+import { openDatabaseSync } from 'expo-sqlite/next';
+
+const expo = openDatabaseSync('db.db');
+const db = drizzle(expo);
+```
+
+### sql.js
+
+SQLite compiled to WebAssembly:
+
+```bash
+npm install drizzle-orm sql.js
+```
+
+```typescript
+import { drizzle } from 'drizzle-orm/sql-js';
+import initSqlJs from 'sql.js';
+
+const SQL = await initSqlJs();
+const sqlite = new SQL.Database();
+const db = drizzle(sqlite);
+```
+
+## File Locations
+
+### Relative Path
+
+```typescript
+const sqlite = new Database('./data/sqlite.db');
+const db = drizzle(sqlite);
+```
+
+### Absolute Path
+
+```typescript
+import path from 'path';
+
+const dbPath = path.join(process.cwd(), 'data', 'sqlite.db');
+const sqlite = new Database(dbPath);
+const db = drizzle(sqlite);
+```
+
+### Temporary Database
+
+```typescript
+import os from 'os';
+import path from 'path';
+
+const dbPath = path.join(os.tmpdir(), 'temp.db');
+const sqlite = new Database(dbPath);
+const db = drizzle(sqlite);
+```
+
+## Mock Database for Testing
+
+All SQLite drivers support mock instances:
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import * as schema from './schema';
+
+const mockDb = drizzle.mock({ schema });
+```
+
+## Common Operations
+
+### Enable Foreign Keys
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db');
+sqlite.pragma('foreign_keys = ON');
+
+const db = drizzle(sqlite);
+```
+
+### Backup Database
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db');
+const db = drizzle(sqlite);
+
+// Create backup
+const backup = sqlite.backup('backup.db');
+await backup.step(-1); // Backup entire database
+backup.finish();
+```
+
+### Vacuum
+
+```typescript
+db.$client.exec('VACUUM');
+```
+
+### Analyze
+
+```typescript
+db.$client.exec('ANALYZE');
+```

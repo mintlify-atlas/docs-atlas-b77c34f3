@@ -1,0 +1,327 @@
+---
+title: Schema Declaration
+description: Learn how to define your database schema using Drizzle ORM's type-safe schema builders
+---
+
+## Overview
+
+Drizzle ORM provides a type-safe, declarative way to define your database schema using TypeScript. Schemas are defined using table builders specific to your database dialect (PostgreSQL, MySQL, or SQLite).
+
+## Table Declaration
+
+### Basic Table Definition
+
+Tables are defined using dialect-specific functions like `pgTable`, `mysqlTable`, or `sqliteTable`.
+
+<CodeGroup>
+```typescript PostgreSQL
+import { pgTable, serial, text, varchar, timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 256 }).notNull(),
+  email: text('email').notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+```
+
+```typescript MySQL
+import { mysqlTable, serial, varchar, text, timestamp } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 256 }).notNull(),
+  email: text('email').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+```
+
+```typescript SQLite
+import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+```
+</CodeGroup>
+
+## Column Types
+
+### PostgreSQL Column Types
+
+Drizzle supports all PostgreSQL column types with full type inference:
+
+```typescript
+import {
+  pgTable,
+  serial,
+  integer,
+  bigint,
+  boolean,
+  text,
+  varchar,
+  char,
+  numeric,
+  real,
+  doublePrecision,
+  json,
+  jsonb,
+  timestamp,
+  date,
+  time,
+  interval,
+  uuid,
+  inet,
+  cidr,
+  macaddr,
+} from 'drizzle-orm/pg-core';
+
+export const products = pgTable('products', {
+  // Serial types (auto-increment)
+  id: serial('id').primaryKey(),
+  
+  // Integer types
+  quantity: integer('quantity').notNull().default(0),
+  bigNumber: bigint('big_number', { mode: 'number' }),
+  
+  // String types
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  code: char('code', { length: 10 }),
+  
+  // Numeric types
+  price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+  weight: real('weight'),
+  latitude: doublePrecision('latitude'),
+  
+  // Boolean
+  inStock: boolean('in_stock').default(true),
+  
+  // JSON
+  metadata: json('metadata'),
+  settings: jsonb('settings').$type<{ theme: string; notifications: boolean }>(),
+  
+  // Date/Time
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  releaseDate: date('release_date'),
+  openTime: time('open_time'),
+  
+  // UUID
+  uuid: uuid('uuid').defaultRandom(),
+});
+```
+
+### Column Modifiers
+
+All column types support common modifiers:
+
+```typescript
+export const users = pgTable('users', {
+  // Primary key
+  id: serial('id').primaryKey(),
+  
+  // Not null constraint
+  email: text('email').notNull(),
+  
+  // Unique constraint
+  username: text('username').unique(),
+  
+  // Default values
+  role: text('role').default('user'),
+  createdAt: timestamp('created_at').defaultNow(),
+  
+  // Multiple modifiers
+  name: varchar('name', { length: 100 }).notNull().default('Anonymous'),
+});
+```
+
+## Type Inference
+
+Drizzle automatically infers TypeScript types from your schema:
+
+```typescript
+import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  age: integer('age'),
+});
+
+// Type for selecting data (all fields required except nullable ones)
+type User = InferSelectModel<typeof users>;
+// { id: number; name: string; email: string; age: number | null }
+
+// Type for inserting data (auto-generated fields optional)
+type NewUser = InferInsertModel<typeof users>;
+// { id?: number; name: string; email: string; age?: number | null }
+
+// Access inferred types directly
+type UserSelect = typeof users.$inferSelect;
+type UserInsert = typeof users.$inferInsert;
+```
+
+## Table Constraints
+
+### Composite Primary Keys
+
+```typescript
+import { pgTable, integer, text, primaryKey } from 'drizzle-orm/pg-core';
+
+export const userRoles = pgTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+  grantedAt: timestamp('granted_at').defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] }),
+]);
+```
+
+### Indexes
+
+```typescript
+import { pgTable, serial, text, index, uniqueIndex } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull(),
+  name: text('name'),
+  city: text('city'),
+}, (table) => [
+  // Simple index
+  index('email_idx').on(table.email),
+  
+  // Unique index
+  uniqueIndex('email_unique_idx').on(table.email),
+  
+  // Composite index
+  index('city_name_idx').on(table.city, table.name),
+]);
+```
+
+### Foreign Keys
+
+```typescript
+import { pgTable, serial, integer, text, foreignKey } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  authorId: integer('author_id').notNull().references(() => users.id),
+}, (table) => [
+  // Alternative foreign key syntax with options
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id],
+  }).onDelete('cascade').onUpdate('cascade'),
+]);
+```
+
+### Check Constraints
+
+```typescript
+import { pgTable, serial, integer, check, sql } from 'drizzle-orm/pg-core';
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  price: integer('price').notNull(),
+  quantity: integer('quantity').notNull(),
+}, (table) => [
+  check('price_check', sql`${table.price} >= 0`),
+  check('quantity_check', sql`${table.quantity} >= 0`),
+]);
+```
+
+## Schemas and Namespaces
+
+### PostgreSQL Schemas
+
+```typescript
+import { pgSchema, serial, text } from 'drizzle-orm/pg-core';
+
+// Create a schema
+export const authSchema = pgSchema('auth');
+
+// Define tables in the schema
+export const users = authSchema.table('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull(),
+});
+
+// Tables will be created as auth.users
+```
+
+### Custom Table Names
+
+Use `pgTableCreator` to add prefixes to table names:
+
+```typescript
+import { pgTableCreator } from 'drizzle-orm/pg-core';
+
+const pgTable = pgTableCreator((name) => `myapp_${name}`);
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+});
+// Creates table: myapp_users
+```
+
+## Custom Column Types
+
+Create custom column types with specific behavior:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+const customPoint = customType<{ data: { x: number; y: number }; driverData: string }>({
+  dataType() {
+    return 'point';
+  },
+  toDriver(value) {
+    return `(${value.x},${value.y})`;
+  },
+  fromDriver(value) {
+    const [x, y] = value.slice(1, -1).split(',').map(Number);
+    return { x, y };
+  },
+});
+
+export const locations = pgTable('locations', {
+  id: serial('id').primaryKey(),
+  coordinates: customPoint('coordinates').notNull(),
+});
+```
+
+## Best Practices
+
+<Note>
+- **Export schemas**: Always export your table definitions for use in queries and migrations
+- **Use type inference**: Leverage `InferSelectModel` and `InferInsertModel` for type safety
+- **Column naming**: Use snake_case for database columns, Drizzle handles conversion
+- **Constraints**: Define constraints in the schema for data integrity
+- **Indexes**: Add indexes for frequently queried columns
+</Note>
+
+<Warning>
+Changing your schema requires running migrations. Never modify the database directly in production.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Connection" icon="plug" href="/core/database-connection">
+    Learn how to connect to your database
+  </Card>
+  <Card title="Queries" icon="database" href="/core/queries">
+    Start querying your database
+  </Card>
+</CardGroup>

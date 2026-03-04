@@ -1,0 +1,244 @@
+---
+title: Tables
+description: Define tables in Drizzle ORM with type-safe schemas for PostgreSQL, MySQL, and SQLite.
+---
+
+Tables are the foundation of your database schema in Drizzle ORM. Each table is defined with columns and optional constraints like indexes, foreign keys, and checks.
+
+## Basic table definition
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { pgTable, serial, text, varchar } from 'drizzle-orm/pg-core';
+
+    export const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+      name: text('name').notNull(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+    });
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { mysqlTable, serial, text, varchar } from 'drizzle-orm/mysql-core';
+
+    export const users = mysqlTable('users', {
+      id: serial('id').primaryKey(),
+      name: text('name').notNull(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+    });
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+
+    export const users = sqliteTable('users', {
+      id: integer('id').primaryKey({ autoIncrement: true }),
+      name: text('name').notNull(),
+      email: text('email').notNull().unique(),
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Table with constraints
+
+Add indexes, foreign keys, and other constraints using the third parameter:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { pgTable, serial, text, varchar, timestamp, index } from 'drizzle-orm/pg-core';
+
+    export const posts = pgTable('posts', {
+      id: serial('id').primaryKey(),
+      title: varchar('title', { length: 255 }).notNull(),
+      content: text('content'),
+      authorId: integer('author_id').notNull(),
+      createdAt: timestamp('created_at').defaultNow(),
+    }, (table) => [
+      index('title_idx').on(table.title),
+      index('author_created_idx').on(table.authorId, table.createdAt),
+    ]);
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { mysqlTable, serial, varchar, text, int, timestamp, index } from 'drizzle-orm/mysql-core';
+
+    export const posts = mysqlTable('posts', {
+      id: serial('id').primaryKey(),
+      title: varchar('title', { length: 255 }).notNull(),
+      content: text('content'),
+      authorId: int('author_id').notNull(),
+      createdAt: timestamp('created_at').defaultNow(),
+    }, (table) => [
+      index('title_idx').on(table.title),
+      index('author_created_idx').on(table.authorId, table.createdAt),
+    ]);
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+
+    export const posts = sqliteTable('posts', {
+      id: integer('id').primaryKey({ autoIncrement: true }),
+      title: text('title').notNull(),
+      content: text('content'),
+      authorId: integer('author_id').notNull(),
+      createdAt: integer('created_at', { mode: 'timestamp' }),
+    }, (table) => [
+      index('title_idx').on(table.title),
+    ]);
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  The third parameter must return an **array** of constraint builders, not an object. The object syntax is deprecated.
+</Note>
+
+## Column types function
+
+Use the callback syntax to access column builders directly:
+
+```typescript
+export const users = pgTable('users', (t) => ({
+  id: t.serial('id').primaryKey(),
+  name: t.text('name').notNull(),
+  email: t.varchar('email', { length: 255 }).notNull(),
+}));
+```
+
+This provides autocomplete for all available column types without individual imports.
+
+## Custom table names
+
+Create a table creator for custom prefixes:
+
+<CodeGroup>
+```typescript PostgreSQL
+import { pgTableCreator } from 'drizzle-orm/pg-core';
+
+const pgTable = pgTableCreator((name) => `myapp_${name}`);
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+});
+// Creates table "myapp_users"
+```
+
+```typescript MySQL
+import { mysqlTableCreator } from 'drizzle-orm/mysql-core';
+
+const mysqlTable = mysqlTableCreator((name) => `myapp_${name}`);
+
+export const users = mysqlTable('users', {
+  id: serial('id').primaryKey(),
+});
+// Creates table "myapp_users"
+```
+
+```typescript SQLite
+import { sqliteTableCreator } from 'drizzle-orm/sqlite-core';
+
+const sqliteTable = sqliteTableCreator((name) => `myapp_${name}`);
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey(),
+});
+// Creates table "myapp_users"
+```
+</CodeGroup>
+
+## Schema namespaces
+
+PostgreSQL and MySQL support schema namespaces:
+
+<CodeGroup>
+```typescript PostgreSQL
+import { pgSchema } from 'drizzle-orm/pg-core';
+
+const authSchema = pgSchema('auth');
+
+export const users = authSchema.table('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+});
+// Creates table "auth"."users"
+```
+
+```typescript MySQL
+import { mysqlSchema } from 'drizzle-orm/mysql-core';
+
+const authSchema = mysqlSchema('auth');
+
+export const users = authSchema.table('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+});
+// Creates table "auth"."users"
+```
+</CodeGroup>
+
+## Row-level security (PostgreSQL)
+
+Enable RLS on PostgreSQL tables:
+
+```typescript
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+}).enableRLS();
+```
+
+<Warning>
+  Enabling RLS only adds the `ENABLE ROW LEVEL SECURITY` clause. You still need to define policies separately.
+</Warning>
+
+## Complete example
+
+```typescript
+import { pgTable, serial, varchar, text, integer, timestamp, index, foreignKey } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('email_idx').on(table.email),
+]);
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content'),
+  authorId: integer('author_id').notNull().references(() => users.id),
+  published: boolean('published').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('author_idx').on(table.authorId),
+  index('published_created_idx').on(table.published, table.createdAt),
+]);
+```
+
+## API reference
+
+<ParamField path="name" type="string" required>
+  The table name in the database
+</ParamField>
+
+<ParamField path="columns" type="object | function" required>
+  Column definitions as an object or callback function that receives column builders
+</ParamField>
+
+<ParamField path="extraConfig" type="function">
+  Optional callback that receives the table columns and returns an array of constraints (indexes, foreign keys, etc.)
+</ParamField>

@@ -1,0 +1,490 @@
+---
+title: Transactions
+description: Execute atomic database operations with Drizzle ORM's transaction API
+---
+
+## Overview
+
+Transactions ensure that a series of database operations either all succeed or all fail together, maintaining data consistency and integrity. Drizzle provides a simple, type-safe transaction API.
+
+## Basic Transactions
+
+### Simple Transaction
+
+Wrap multiple operations in a transaction:
+
+```typescript
+import { db } from './db';
+import { users, accounts } from './schema';
+
+await db.transaction(async (tx) => {
+  // Insert user
+  const [user] = await tx.insert(users).values({
+    name: 'John Doe',
+    email: 'john@example.com',
+  }).returning();
+
+  // Create associated account
+  await tx.insert(accounts).values({
+    userId: user.id,
+    balance: 0,
+  });
+
+  // Both operations succeed or both fail
+});
+```
+
+If any operation fails, all changes are rolled back automatically.
+
+### Transaction Return Value
+
+Return data from transactions:
+
+```typescript
+const newUser = await db.transaction(async (tx) => {
+  const [user] = await tx.insert(users).values({
+    name: 'Jane Doe',
+    email: 'jane@example.com',
+  }).returning();
+
+  await tx.insert(accounts).values({
+    userId: user.id,
+    balance: 100,
+  });
+
+  return user; // Return value becomes transaction result
+});
+
+console.log(newUser.id, newUser.name);
+```
+
+## Transaction API
+
+The transaction callback receives a transaction object (`tx`) that has the same API as `db`:
+
+```typescript
+await db.transaction(async (tx) => {
+  // All query methods available
+  await tx.select().from(users);
+  await tx.insert(users).values({ name: 'Alice' });
+  await tx.update(users).set({ active: true });
+  await tx.delete(users).where(eq(users.id, 1));
+  
+  // Relational queries
+  await tx.query.users.findMany();
+  
+  // Raw SQL
+  await tx.execute(sql`SELECT * FROM users`);
+});
+```
+
+## Rollback
+
+### Automatic Rollback
+
+Transactions automatically roll back on errors:
+
+```typescript
+try {
+  await db.transaction(async (tx) => {
+    await tx.insert(users).values({ name: 'Bob' });
+    
+    // This will fail (duplicate email)
+    await tx.insert(users).values({ email: 'existing@example.com' });
+    
+    // Transaction automatically rolled back
+  });
+} catch (error) {
+  console.error('Transaction failed:', error);
+  // First insert was rolled back
+}
+```
+
+### Manual Rollback
+
+Explicitly roll back a transaction:
+
+```typescript
+import { TransactionRollbackError } from 'drizzle-orm';
+
+try {
+  await db.transaction(async (tx) => {
+    const [user] = await tx.insert(users).values({ 
+      name: 'Charlie' 
+    }).returning();
+
+    // Business logic check
+    if (user.id > 1000) {
+      // Roll back transaction
+      tx.rollback();
+    }
+
+    await tx.insert(accounts).values({ userId: user.id });
+  });
+} catch (error) {
+  if (error instanceof TransactionRollbackError) {
+    console.log('Transaction was rolled back');
+  }
+}
+```
+
+## Transaction Isolation
+
+### PostgreSQL Isolation Levels
+
+Configure transaction isolation level:
+
+```typescript
+import { db } from './db';
+
+// Read Committed (default)
+await db.transaction(async (tx) => {
+  // Transaction code
+}, {
+  isolationLevel: 'read committed',
+});
+
+// Repeatable Read
+await db.transaction(async (tx) => {
+  // Transaction code
+}, {
+  isolationLevel: 'repeatable read',
+});
+
+// Serializable
+await db.transaction(async (tx) => {
+  // Transaction code
+}, {
+  isolationLevel: 'serializable',
+});
+
+// Read Uncommitted
+await db.transaction(async (tx) => {
+  // Transaction code
+}, {
+  isolationLevel: 'read uncommitted',
+});
+```
+
+### Access Mode
+
+Set transaction to read-only:
+
+```typescript
+await db.transaction(async (tx) => {
+  // Only read operations allowed
+  const users = await tx.select().from(users);
+  
+  // Write operations will fail
+}, {
+  accessMode: 'read only',
+});
+
+// Read-write (default)
+await db.transaction(async (tx) => {
+  // Both read and write operations allowed
+}, {
+  accessMode: 'read write',
+});
+```
+
+### Deferrable Transactions
+
+PostgreSQL-specific deferrable transactions:
+
+```typescript
+await db.transaction(async (tx) => {
+  // Transaction code
+}, {
+  deferrable: true,
+});
+```
+
+## Nested Transactions
+
+### Savepoints
+
+Use savepoints for partial rollbacks:
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'User 1' });
+
+  // Create savepoint
+  await tx.execute(sql`SAVEPOINT sp1`);
+
+  try {
+    await tx.insert(users).values({ email: 'duplicate@example.com' });
+  } catch (error) {
+    // Rollback to savepoint
+    await tx.execute(sql`ROLLBACK TO SAVEPOINT sp1`);
+  }
+
+  // First insert still committed
+  await tx.insert(accounts).values({ userId: 1 });
+});
+```
+
+### Nested Transaction Pattern
+
+Implement nested transaction logic:
+
+```typescript
+async function createUserWithAccount(tx: typeof db) {
+  const [user] = await tx.insert(users).values({
+    name: 'Alice',
+  }).returning();
+
+  await tx.insert(accounts).values({
+    userId: user.id,
+  });
+
+  return user;
+}
+
+await db.transaction(async (tx) => {
+  const user = await createUserWithAccount(tx);
+  
+  await tx.insert(posts).values({
+    authorId: user.id,
+    title: 'First post',
+  });
+});
+```
+
+## Use Cases
+
+### Bank Transfer
+
+Atomic money transfer between accounts:
+
+```typescript
+import { eq, sql } from 'drizzle-orm';
+
+async function transferMoney(
+  fromAccountId: number,
+  toAccountId: number,
+  amount: number
+) {
+  await db.transaction(async (tx) => {
+    // Withdraw from source account
+    const [fromAccount] = await tx
+      .update(accounts)
+      .set({ balance: sql`${accounts.balance} - ${amount}` })
+      .where(eq(accounts.id, fromAccountId))
+      .returning();
+
+    // Check sufficient balance
+    if (fromAccount.balance < 0) {
+      throw new Error('Insufficient funds');
+    }
+
+    // Deposit to destination account
+    await tx
+      .update(accounts)
+      .set({ balance: sql`${accounts.balance} + ${amount}` })
+      .where(eq(accounts.id, toAccountId));
+  });
+}
+
+await transferMoney(1, 2, 100); // Transfer $100 from account 1 to 2
+```
+
+### Inventory Management
+
+Update inventory and create order atomically:
+
+```typescript
+import { gte } from 'drizzle-orm';
+
+async function createOrder(userId: number, productId: number, quantity: number) {
+  return db.transaction(async (tx) => {
+    // Check and update inventory
+    const [product] = await tx
+      .update(products)
+      .set({ stock: sql`${products.stock} - ${quantity}` })
+      .where(eq(products.id, productId))
+      .returning();
+
+    // Verify stock availability
+    if (product.stock < 0) {
+      throw new Error('Insufficient stock');
+    }
+
+    // Create order
+    const [order] = await tx
+      .insert(orders)
+      .values({
+        userId,
+        productId,
+        quantity,
+        total: product.price * quantity,
+      })
+      .returning();
+
+    return order;
+  });
+}
+```
+
+### User Registration
+
+Create user with related records:
+
+```typescript
+async function registerUser(email: string, name: string) {
+  return db.transaction(async (tx) => {
+    // Create user
+    const [user] = await tx
+      .insert(users)
+      .values({ email, name })
+      .returning();
+
+    // Create profile
+    await tx.insert(profiles).values({
+      userId: user.id,
+      bio: '',
+    });
+
+    // Create default settings
+    await tx.insert(settings).values({
+      userId: user.id,
+      theme: 'light',
+      notifications: true,
+    });
+
+    // Send welcome email (outside transaction)
+    // await sendWelcomeEmail(user.email);
+
+    return user;
+  });
+}
+```
+
+## Error Handling
+
+### Catching Specific Errors
+
+```typescript
+import { DrizzleError } from 'drizzle-orm';
+
+try {
+  await db.transaction(async (tx) => {
+    await tx.insert(users).values({ email: 'duplicate@example.com' });
+  });
+} catch (error) {
+  if (error instanceof DrizzleError) {
+    console.error('Database error:', error.message);
+  } else {
+    console.error('Unknown error:', error);
+  }
+}
+```
+
+### Retry Logic
+
+```typescript
+async function transactionWithRetry<T>(
+  fn: (tx: typeof db) => Promise<T>,
+  maxRetries = 3
+): Promise<T> {
+  let lastError;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await db.transaction(fn);
+    } catch (error) {
+      lastError = error;
+      
+      // Check if error is retryable (e.g., deadlock)
+      if (isRetryableError(error) && i < maxRetries - 1) {
+        await sleep(Math.pow(2, i) * 100); // Exponential backoff
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  throw lastError;
+}
+
+function isRetryableError(error: any): boolean {
+  // PostgreSQL deadlock error code
+  return error.code === '40P01';
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+```
+
+## Best Practices
+
+<Note>
+- **Keep transactions short**: Long transactions hold locks and can cause performance issues
+- **Avoid external calls**: Don't make HTTP requests or other I/O inside transactions
+- **Handle errors**: Always wrap transactions in try-catch blocks
+- **Use appropriate isolation**: Choose the right isolation level for your use case
+- **Idempotency**: Design operations to be safely retryable
+- **Read-only optimization**: Use `accessMode: 'read only'` for read-only transactions
+</Note>
+
+<Warning>
+- Never call external APIs inside transactions
+- Avoid user input or long-running computations in transactions
+- Be careful with nested transactions - not all databases support true nesting
+- Watch for deadlocks when using high isolation levels
+</Warning>
+
+## Performance Tips
+
+### Batch Operations
+
+Use batch inserts instead of multiple single inserts:
+
+```typescript
+// Good: Single insert with multiple values
+await db.transaction(async (tx) => {
+  await tx.insert(users).values([
+    { name: 'User 1', email: 'user1@example.com' },
+    { name: 'User 2', email: 'user2@example.com' },
+    { name: 'User 3', email: 'user3@example.com' },
+  ]);
+});
+
+// Bad: Multiple inserts
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'User 1', email: 'user1@example.com' });
+  await tx.insert(users).values({ name: 'User 2', email: 'user2@example.com' });
+  await tx.insert(users).values({ name: 'User 3', email: 'user3@example.com' });
+});
+```
+
+### Lock Only What's Needed
+
+```typescript
+// Lock specific rows for update
+await db.transaction(async (tx) => {
+  const user = await tx.select()
+    .from(users)
+    .where(eq(users.id, 1))
+    .for('update'); // Row-level lock
+
+  // Update locked row
+  await tx.update(users)
+    .set({ balance: user[0].balance + 100 })
+    .where(eq(users.id, 1));
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Queries" icon="database" href="/core/queries">
+    Learn more about querying data
+  </Card>
+  <Card title="Migrations" icon="arrows-rotate" href="/core/migrations">
+    Manage schema changes safely
+  </Card>
+</CardGroup>

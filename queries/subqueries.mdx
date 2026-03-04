@@ -1,0 +1,570 @@
+---
+title: Subqueries
+description: Use subqueries in Drizzle ORM for complex nested queries, correlated subqueries, and Common Table Expressions (CTEs) with full type safety.
+---
+
+Drizzle ORM provides powerful support for subqueries, allowing you to nest queries within other queries for complex data retrieval and manipulation.
+
+## Basic Subquery
+
+Create and use a subquery:
+
+```typescript
+import { db } from './db';
+import { users, posts } from './schema';
+import { eq } from 'drizzle-orm';
+
+// Create a subquery
+const activeUsers = db.select()
+  .from(users)
+  .where(eq(users.active, true))
+  .as('active_users');
+
+// Use the subquery
+const result = await db.select()
+  .from(activeUsers);
+```
+
+## Subquery in WHERE Clause
+
+Use subqueries for filtering:
+
+<CodeGroup>
+
+```typescript IN Subquery
+import { sql, inArray } from 'drizzle-orm';
+
+// Users who have posts
+const usersWithPosts = await db.select()
+  .from(users)
+  .where(
+    sql`${users.id} IN (
+      SELECT DISTINCT ${posts.userId} FROM ${posts}
+    )`
+  );
+
+// Or using inArray with subquery
+const userIds = db.select({ id: posts.userId })
+  .from(posts)
+  .as('user_ids');
+```
+
+```typescript EXISTS Subquery
+import { exists } from 'drizzle-orm';
+
+// Users who have at least one post
+const usersWithPosts = await db.select()
+  .from(users)
+  .where(
+    exists(
+      db.select()
+        .from(posts)
+        .where(eq(posts.userId, users.id))
+    )
+  );
+```
+
+```typescript NOT EXISTS
+import { notExists } from 'drizzle-orm';
+
+// Users who have no posts
+const usersWithoutPosts = await db.select()
+  .from(users)
+  .where(
+    notExists(
+      db.select()
+        .from(posts)
+        .where(eq(posts.userId, users.id))
+    )
+  );
+```
+
+</CodeGroup>
+
+## Subquery in SELECT
+
+Include subquery results in select:
+
+```typescript
+import { sql, eq } from 'drizzle-orm';
+
+// Select with correlated subquery
+const result = await db.select({
+  id: users.id,
+  name: users.name,
+  postCount: sql<number>`(
+    SELECT COUNT(*)
+    FROM ${posts}
+    WHERE ${posts.userId} = ${users.id}
+  )`,
+})
+  .from(users);
+```
+
+## Common Table Expressions (CTE)
+
+Use WITH clauses for readable complex queries:
+
+<CodeGroup>
+
+```typescript Basic CTE
+import { sql } from 'drizzle-orm';
+
+// Define CTE
+const activeUsers = db.$with('active_users').as(
+  db.select({
+    id: users.id,
+    name: users.name,
+  })
+    .from(users)
+    .where(eq(users.active, true))
+);
+
+// Use CTE in query
+const result = await db.with(activeUsers)
+  .select()
+  .from(activeUsers);
+```
+
+```typescript Multiple CTEs
+// Define multiple CTEs
+const activeUsers = db.$with('active_users').as(
+  db.select().from(users).where(eq(users.active, true))
+);
+
+const recentPosts = db.$with('recent_posts').as(
+  db.select()
+    .from(posts)
+    .where(gt(posts.createdAt, sql`now() - interval '7 days'`))
+);
+
+// Use both CTEs
+const result = await db
+  .with(activeUsers, recentPosts)
+  .select({
+    userName: activeUsers.name,
+    postTitle: recentPosts.title,
+  })
+  .from(activeUsers)
+  .innerJoin(recentPosts, eq(activeUsers.id, recentPosts.userId));
+```
+
+```typescript Recursive CTE
+import { sql } from 'drizzle-orm';
+
+// Recursive CTE for hierarchical data
+const categoriesTree = db.$with('categories_tree').as(
+  db.select({
+    id: categories.id,
+    name: categories.name,
+    parentId: categories.parentId,
+    level: sql<number>`1`.as('level'),
+  })
+    .from(categories)
+    .where(isNull(categories.parentId))
+    .unionAll(
+      db.select({
+        id: categories.id,
+        name: categories.name,
+        parentId: categories.parentId,
+        level: sql<number>`categories_tree.level + 1`,
+      })
+        .from(categories)
+        .innerJoin(
+          sql`categories_tree`,
+          sql`${categories.parentId} = categories_tree.id`
+        )
+    )
+);
+
+const result = await db.with(categoriesTree)
+  .select()
+  .from(categoriesTree);
+```
+
+</CodeGroup>
+
+## Subquery Joins
+
+Join with subquery results:
+
+```typescript
+import { sql, eq, desc } from 'drizzle-orm';
+
+// Get users with their latest post
+const latestPosts = db.select({
+  userId: posts.userId,
+  title: posts.title,
+  createdAt: posts.createdAt,
+  rowNum: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${posts.userId} ORDER BY ${posts.createdAt} DESC)`.as('row_num'),
+})
+  .from(posts)
+  .as('latest_posts');
+
+const result = await db.select({
+  userName: users.name,
+  latestPostTitle: latestPosts.title,
+})
+  .from(users)
+  .innerJoin(latestPosts, eq(users.id, latestPosts.userId))
+  .where(eq(latestPosts.rowNum, 1));
+```
+
+## Correlated Subqueries
+
+Subqueries that reference outer query:
+
+```typescript
+import { sql, gt } from 'drizzle-orm';
+
+// Users with above-average post count
+const result = await db.select({
+  id: users.id,
+  name: users.name,
+  postCount: sql<number>`(
+    SELECT COUNT(*)
+    FROM ${posts}
+    WHERE ${posts.userId} = ${users.id}
+  )`,
+})
+  .from(users)
+  .where(
+    sql`(
+      SELECT COUNT(*)
+      FROM ${posts}
+      WHERE ${posts.userId} = ${users.id}
+    ) > (
+      SELECT AVG(post_count)
+      FROM (
+        SELECT COUNT(*) as post_count
+        FROM ${posts}
+        GROUP BY ${posts.userId}
+      ) as counts
+    )`
+  );
+```
+
+## Subquery with Aggregations
+
+Combine subqueries with aggregate functions:
+
+```typescript
+import { count, sum, avg, sql } from 'drizzle-orm';
+
+// Department statistics
+const departmentStats = db.select({
+  department: employees.department,
+  avgSalary: avg(employees.salary),
+  employeeCount: count(),
+})
+  .from(employees)
+  .groupBy(employees.department)
+  .as('dept_stats');
+
+const result = await db.select({
+  department: departmentStats.department,
+  avgSalary: departmentStats.avgSalary,
+  employeeCount: departmentStats.employeeCount,
+  aboveCompanyAvg: sql<boolean>`${departmentStats.avgSalary} > (
+    SELECT AVG(${employees.salary}) FROM ${employees}
+  )`,
+})
+  .from(departmentStats);
+```
+
+## Lateral Joins (PostgreSQL)
+
+Use LATERAL for more powerful correlated subqueries:
+
+```typescript
+import { sql, desc } from 'drizzle-orm';
+
+// Get each user with their 3 most recent posts
+const recentPosts = db.select({
+  id: posts.id,
+  title: posts.title,
+  createdAt: posts.createdAt,
+})
+  .from(posts)
+  .where(eq(posts.userId, users.id))
+  .orderBy(desc(posts.createdAt))
+  .limit(3)
+  .as('recent_posts');
+
+const result = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postTitle: recentPosts.title,
+})
+  .from(users)
+  .leftJoinLateral(recentPosts, sql`true`);
+```
+
+## Subquery in FROM Clause
+
+Use subquery as a data source:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Aggregate over grouped results
+const userPostCounts = db.select({
+  userId: posts.userId,
+  postCount: count(),
+})
+  .from(posts)
+  .groupBy(posts.userId)
+  .as('user_post_counts');
+
+const result = await db.select({
+  avgPostsPerUser: avg(userPostCounts.postCount),
+  maxPostsPerUser: max(userPostCounts.postCount),
+})
+  .from(userPostCounts);
+```
+
+## Nested Subqueries
+
+Subqueries within subqueries:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Multi-level nesting
+const topUsers = db.select({
+  userId: posts.userId,
+  postCount: count(),
+})
+  .from(posts)
+  .groupBy(posts.userId)
+  .having(({ postCount }) => gt(postCount, 10))
+  .as('top_users');
+
+const topUsersWithDetails = db.select({
+  id: users.id,
+  name: users.name,
+  postCount: topUsers.postCount,
+})
+  .from(users)
+  .innerJoin(topUsers, eq(users.id, topUsers.userId))
+  .as('top_users_details');
+
+const result = await db.select()
+  .from(topUsersWithDetails)
+  .where(gt(topUsersWithDetails.postCount, 20));
+```
+
+## Scalar Subqueries
+
+Subqueries returning a single value:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Compare to scalar value from subquery
+const result = await db.select()
+  .from(products)
+  .where(
+    sql`${products.price} > (
+      SELECT AVG(${products.price}) FROM ${products}
+    )`
+  );
+```
+
+## Insert from Subquery
+
+Insert data from a select query:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Archive old records
+await db.insert(archivedUsers)
+  .select(
+    db.select()
+      .from(users)
+      .where(lt(users.lastLoginAt, sql`now() - interval '1 year'`))
+  );
+```
+
+## Update with Subquery
+
+Update using subquery results:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Update with calculated value
+await db.update(users)
+  .set({
+    postCount: sql`(
+      SELECT COUNT(*)
+      FROM ${posts}
+      WHERE ${posts.userId} = ${users.id}
+    )`,
+  });
+```
+
+## Delete with Subquery
+
+Delete based on subquery:
+
+```typescript
+import { sql, inArray } from 'drizzle-orm';
+
+// Delete users who haven't posted
+await db.delete(users)
+  .where(
+    notExists(
+      db.select().from(posts).where(eq(posts.userId, users.id))
+    )
+  );
+```
+
+## Union with Subqueries
+
+Combine multiple subquery results:
+
+```typescript
+// Combine different user types
+const admins = db.select({
+  id: users.id,
+  name: users.name,
+  type: sql<string>`'admin'`,
+})
+  .from(users)
+  .where(eq(users.role, 'admin'))
+  .as('admins');
+
+const moderators = db.select({
+  id: users.id,
+  name: users.name,
+  type: sql<string>`'moderator'`,
+})
+  .from(users)
+  .where(eq(users.role, 'moderator'))
+  .as('moderators');
+
+const result = await db.select().from(admins)
+  .unionAll(db.select().from(moderators));
+```
+
+## Type Safety
+
+Subqueries maintain full type safety:
+
+```typescript
+const activeUsers = db.select({
+  id: users.id,
+  name: users.name,
+  email: users.email,
+})
+  .from(users)
+  .where(eq(users.active, true))
+  .as('active_users');
+
+const result = await db.select()
+  .from(activeUsers);
+
+// TypeScript knows the shape:
+// result: Array<{
+//   id: number;
+//   name: string;
+//   email: string;
+// }>
+```
+
+## Performance Tips
+
+<Steps>
+  <Step title="Use CTEs for Readability">
+    CTEs make complex queries easier to understand and maintain
+  </Step>
+  <Step title="Index Subquery Columns">
+    Ensure columns used in subquery joins and WHERE clauses are indexed
+  </Step>
+  <Step title="Limit Subquery Results">
+    Use LIMIT in subqueries when you don't need all rows
+  </Step>
+  <Step title="Consider Materialized CTEs">
+    For expensive subqueries used multiple times, consider materialized views
+  </Step>
+  <Step title="Test Query Plans">
+    Use EXPLAIN to understand how the database executes your subqueries
+  </Step>
+</Steps>
+
+## Common Patterns
+
+<CardGroup cols={2}>
+  <Card title="Top N per Group" icon="ranking-star">
+    ```typescript
+    const ranked = db.select({
+      ...posts,
+      rank: sql`ROW_NUMBER() OVER (
+        PARTITION BY ${posts.userId} 
+        ORDER BY ${posts.createdAt} DESC
+      )`,
+    })
+      .from(posts)
+      .as('ranked');
+    
+    await db.select()
+      .from(ranked)
+      .where(eq(ranked.rank, 1));
+    ```
+  </Card>
+  
+  <Card title="Deduplication" icon="clone">
+    ```typescript
+    await db.delete(users)
+      .where(sql`id NOT IN (
+        SELECT MIN(id)
+        FROM ${users}
+        GROUP BY email
+      )`);
+    ```
+  </Card>
+  
+  <Card title="Running Totals" icon="chart-line">
+    ```typescript
+    const sales = db.select({
+      date: orders.date,
+      amount: orders.amount,
+      runningTotal: sql`SUM(${orders.amount}) OVER (
+        ORDER BY ${orders.date}
+      )`,
+    })
+      .from(orders);
+    ```
+  </Card>
+  
+  <Card title="Pivot Tables" icon="table">
+    ```typescript
+    const pivot = db.select({
+      category: products.category,
+      q1Sales: sum(sql`CASE WHEN quarter = 1 THEN amount END`),
+      q2Sales: sum(sql`CASE WHEN quarter = 2 THEN amount END`),
+    })
+      .from(products)
+      .groupBy(products.category);
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Joins" href="/queries/joins" icon="link">
+    Combine subqueries with joins
+  </Card>
+  <Card title="Aggregations" href="/queries/aggregations" icon="chart-simple">
+    Use aggregations in subqueries
+  </Card>
+  <Card title="Select Queries" href="/queries/select" icon="magnifying-glass">
+    Master the select query builder
+  </Card>
+  <Card title="Performance" href="/essentials/performance" icon="gauge-high">
+    Optimize subquery performance
+  </Card>
+</CardGroup>

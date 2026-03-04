@@ -1,0 +1,321 @@
+---
+title: sql Template Tag
+description: Complete API reference for Drizzle ORM's sql template tag for building raw SQL queries with type safety.
+---
+
+The `sql` template tag is Drizzle's core primitive for constructing raw SQL queries with automatic parameter binding and type safety. It provides escape hatches for complex queries while maintaining protection against SQL injection.
+
+## Import
+
+```typescript
+import { sql } from 'drizzle-orm';
+```
+
+## Basic Usage
+
+### Simple SQL Queries
+
+The `sql` template tag allows you to write raw SQL with automatic parameter escaping:
+
+```typescript
+const result = await db.execute(sql`SELECT * FROM users WHERE id = ${userId}`);
+```
+
+Parameters passed into the template are automatically bound and escaped, preventing SQL injection attacks.
+
+### Type-Safe SQL Queries
+
+Specify the return type using TypeScript generics:
+
+```typescript
+const result = await db.execute<{ id: number; name: string }[]>(
+  sql`SELECT id, name FROM users WHERE active = ${true}`
+);
+```
+
+## SQL Methods
+
+### sql.raw()
+
+Create SQL from a raw string without parameter binding:
+
+<ParamField path="str" type="string" required>
+  The raw SQL query string
+</ParamField>
+
+<Warning>
+  **WARNING:** `sql.raw()` does not offer any protection against SQL injection. You must validate any user input beforehand.
+</Warning>
+
+```typescript
+const tableName = 'users'; // Trusted value only
+const query = sql.raw(`SELECT * FROM ${tableName}`);
+```
+
+### sql.identifier()
+
+Create a SQL chunk that represents a database identifier (table, column, index, etc.). When used in a query, the identifier will be escaped based on the database engine.
+
+<ParamField path="value" type="string" required>
+  The identifier name to escape
+</ParamField>
+
+<Warning>
+  **WARNING:** This function does not offer any protection against SQL injections. You must validate any user input beforehand.
+</Warning>
+
+```typescript
+const tableName = 'my-table'; // Table name with special characters
+const query = sql`SELECT * FROM ${sql.identifier(tableName)}`;
+// PostgreSQL: SELECT * FROM "my-table"
+```
+
+### sql.join()
+
+Join multiple SQL chunks with an optional separator:
+
+<ParamField path="chunks" type="SQLChunk[]" required>
+  Array of SQL chunks to join
+</ParamField>
+
+<ParamField path="separator" type="SQLChunk">
+  Optional separator to insert between chunks
+</ParamField>
+
+```typescript
+const conditions = [
+  sql`age > ${18}`,
+  sql`status = ${'active'}`,
+  sql`verified = ${true}`
+];
+
+const query = sql`SELECT * FROM users WHERE ${sql.join(conditions, sql` AND `)}`;
+// SELECT * FROM users WHERE age > $1 AND status = $2 AND verified = $3
+```
+
+**Without separator:**
+
+```typescript
+const parts = [sql`SELECT`, sql`*`, sql`FROM`, sql`users`];
+const query = sql.join(parts, sql` `);
+// SELECT * FROM users
+```
+
+### sql.empty()
+
+Create an empty SQL query:
+
+```typescript
+const emptySql = sql.empty();
+```
+
+### sql.placeholder()
+
+Create a named placeholder for prepared statements:
+
+<ParamField path="name" type="string" required>
+  The name of the placeholder
+</ParamField>
+
+```typescript
+const prepared = db.select().from(users).where(
+  eq(users.id, sql.placeholder('userId'))
+).prepare('getUserById');
+
+// Execute with placeholder values
+const result = await prepared.execute({ userId: 42 });
+```
+
+### sql.param()
+
+Create a parameter with an optional encoder:
+
+<ParamField path="value" type="TData" required>
+  The parameter value
+</ParamField>
+
+<ParamField path="encoder" type="DriverValueEncoder<TData, TDriver>">
+  Optional encoder to convert the value to a driver parameter
+</ParamField>
+
+```typescript
+const query = sql`INSERT INTO users (data) VALUES (${sql.param(jsonData)})`;
+```
+
+## SQL Instance Methods
+
+### .as()
+
+Alias a SQL expression for use in select queries:
+
+<ParamField path="alias" type="string" required>
+  The alias name for this SQL expression
+</ParamField>
+
+```typescript
+const fullName = sql<string>`concat(first_name, ' ', last_name)`.as('full_name');
+
+const result = await db.select({ fullName }).from(users);
+// Access: result[0].fullName
+```
+
+### .mapWith()
+
+Provide a custom decoder to transform the database value:
+
+<ParamField path="decoder" type="DriverValueDecoder | function" required>
+  Decoder function or object with mapFromDriverValue method
+</ParamField>
+
+```typescript
+const uppercased = sql<string>`UPPER(name)`.mapWith((value: string) => value.toLowerCase());
+
+const result = await db.select({ name: uppercased }).from(users);
+```
+
+### .inlineParams()
+
+Inline parameters directly into the SQL string instead of using parameter binding:
+
+<Warning>
+  Use with caution. Only use with trusted values to avoid SQL injection.
+</Warning>
+
+```typescript
+const query = sql`SELECT * FROM users WHERE id = ${userId}`.inlineParams();
+// SELECT * FROM users WHERE id = 42
+```
+
+### .if()
+
+Conditionally include a SQL chunk in the query:
+
+<ParamField path="condition" type="any" required>
+  Condition to check. Returns itself if truthy, undefined otherwise
+</ParamField>
+
+```typescript
+const filters = [
+  sql`status = 'active'`,
+  sql`age > ${minAge}`.if(minAge !== undefined),
+  sql`verified = true`.if(onlyVerified),
+];
+
+const query = sql`SELECT * FROM users WHERE ${
+  sql.join(filters.filter(Boolean), sql` AND `)
+}`;
+```
+
+## Using SQL with Table References
+
+Reference tables and columns directly in sql queries:
+
+```typescript
+import { users, posts } from './schema';
+
+const result = await db.execute(
+  sql`SELECT ${users.id}, ${users.name} FROM ${users} WHERE ${users.active} = ${true}`
+);
+```
+
+## Advanced Examples
+
+### Dynamic WHERE Clauses
+
+```typescript
+function buildQuery(filters: { status?: string; minAge?: number }) {
+  const conditions = [
+    filters.status && sql`status = ${filters.status}`,
+    filters.minAge && sql`age >= ${filters.minAge}`,
+  ].filter(Boolean);
+
+  return sql`SELECT * FROM users WHERE ${
+    sql.join(conditions, sql` AND `)
+  }`;
+}
+```
+
+### Custom Aggregations
+
+```typescript
+const avgAge = sql<number>`AVG(${users.age})`.as('average_age');
+const userCount = sql<number>`COUNT(*)`.as('total_users');
+
+const stats = await db.select({
+  averageAge: avgAge,
+  totalUsers: userCount,
+}).from(users);
+```
+
+### Window Functions
+
+```typescript
+const rowNumber = sql<number>`
+  ROW_NUMBER() OVER (PARTITION BY ${users.department} ORDER BY ${users.salary} DESC)
+`.as('row_num');
+
+const result = await db.select({
+  name: users.name,
+  department: users.department,
+  rowNumber,
+}).from(users);
+```
+
+### Array Operations (PostgreSQL)
+
+```typescript
+const tags = ['javascript', 'typescript'];
+const query = sql`SELECT * FROM posts WHERE tags && ${tags}`;
+```
+
+### JSON Operations
+
+```typescript
+// PostgreSQL JSON operators
+const query = sql`SELECT * FROM users WHERE metadata->>'role' = ${'admin'}`;
+
+// With type safety
+const role = sql<string>`metadata->>'role'`.as('user_role');
+```
+
+## Type Safety
+
+The `sql` template tag supports TypeScript generics for type-safe results:
+
+```typescript
+interface UserStats {
+  total: number;
+  active: number;
+  avgAge: number;
+}
+
+const stats = await db.execute<UserStats[]>(sql`
+  SELECT
+    COUNT(*) as total,
+    COUNT(*) FILTER (WHERE active = true) as active,
+    AVG(age) as avg_age
+  FROM users
+`);
+```
+
+## SQL Injection Protection
+
+Drizzle automatically protects against SQL injection by:
+
+1. **Parameterizing values**: All interpolated values use parameter binding
+2. **Type checking**: TypeScript prevents unsafe value types
+3. **Escaping identifiers**: `sql.identifier()` escapes special characters
+
+```typescript
+// SAFE - value is parameterized
+const safe = sql`SELECT * FROM users WHERE name = ${userName}`;
+
+// UNSAFE - raw string without validation
+const unsafe = sql.raw(`SELECT * FROM users WHERE name = '${userName}'`);
+```
+
+## Related APIs
+
+- [Transactions](/api/core/transactions) - Execute SQL within transactions
+- [Migrations](/api/core/migrations) - Use sql for custom migrations
+- [Query Builder](/queries/select) - Type-safe query building

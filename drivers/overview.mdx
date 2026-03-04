@@ -1,0 +1,191 @@
+---
+title: 'Database Drivers'
+description: 'Overview of database drivers and connection options in Drizzle ORM'
+---
+
+# Database Drivers
+
+Drizzle ORM supports a wide range of database drivers across PostgreSQL, MySQL, and SQLite. Each driver is optimized for specific use cases and deployment environments.
+
+## Driver Categories
+
+### PostgreSQL Drivers
+
+Drizzle supports multiple PostgreSQL drivers, each optimized for different environments:
+
+<CardGroup cols={2}>
+  <Card title="node-postgres (pg)" icon="node" href="/drivers/postgresql#node-postgres">
+    Traditional Node.js driver with connection pooling
+  </Card>
+  <Card title="postgres.js" icon="bolt" href="/drivers/postgresql#postgres-js">
+    Modern, fast PostgreSQL driver for Node.js
+  </Card>
+  <Card title="Neon Serverless" icon="cloud" href="/drivers/postgresql#neon-serverless">
+    WebSocket-based driver for Neon serverless databases
+  </Card>
+  <Card title="Neon HTTP" icon="server" href="/drivers/postgresql#neon-http">
+    HTTP-based driver for edge environments
+  </Card>
+  <Card title="Vercel Postgres" icon="triangle" href="/drivers/postgresql#vercel-postgres">
+    Optimized driver for Vercel deployments
+  </Card>
+</CardGroup>
+
+### MySQL Drivers
+
+MySQL and MySQL-compatible database drivers:
+
+<CardGroup cols={2}>
+  <Card title="mysql2" icon="database" href="/drivers/mysql#mysql2">
+    Fast MySQL driver for Node.js with prepared statements
+  </Card>
+  <Card title="PlanetScale" icon="globe" href="/drivers/mysql#planetscale">
+    Serverless driver for PlanetScale databases
+  </Card>
+</CardGroup>
+
+### SQLite Drivers
+
+SQLite drivers for various JavaScript runtimes:
+
+<CardGroup cols={2}>
+  <Card title="better-sqlite3" icon="gear" href="/drivers/sqlite#better-sqlite3">
+    Synchronous SQLite driver for Node.js
+  </Card>
+  <Card title="libSQL" icon="database" href="/drivers/sqlite#libsql">
+    Driver for Turso and local SQLite databases
+  </Card>
+  <Card title="Cloudflare D1" icon="cloud" href="/drivers/sqlite#cloudflare-d1">
+    SQLite driver for Cloudflare Workers
+  </Card>
+</CardGroup>
+
+## Common Configuration Options
+
+All Drizzle drivers support a consistent configuration API:
+
+### Schema
+
+Pass your schema to enable relational queries:
+
+```typescript
+import { drizzle } from 'drizzle-orm/[driver]';
+import * as schema from './schema';
+
+const db = drizzle(client, { schema });
+```
+
+### Logger
+
+Enable query logging for debugging:
+
+```typescript
+// Enable default logger
+const db = drizzle(client, { logger: true });
+
+// Custom logger
+const db = drizzle(client, {
+  logger: {
+    logQuery(query, params) {
+      console.log({ query, params });
+    },
+  },
+});
+```
+
+### Casing
+
+Automatically convert between database and JavaScript naming conventions:
+
+```typescript
+const db = drizzle(client, {
+  casing: 'snake_case', // Convert camelCase to snake_case
+});
+```
+
+### Cache
+
+Enable query result caching:
+
+```typescript
+import { caching } from 'drizzle-orm';
+
+const db = drizzle(client, {
+  cache: caching({
+    ttl: 60_000, // 60 seconds
+  }),
+});
+```
+
+## Connection Methods
+
+Drizzle supports multiple ways to initialize database connections:
+
+### Method 1: Pass existing client
+
+```typescript
+import { drizzle } from 'drizzle-orm/[driver]';
+import { Client } from '[driver-package]';
+
+const client = new Client({
+  // connection options
+});
+
+const db = drizzle(client);
+```
+
+### Method 2: Connection string
+
+```typescript
+const db = drizzle('postgres://user:password@host:port/database');
+```
+
+### Method 3: Configuration object
+
+```typescript
+const db = drizzle({
+  connection: {
+    host: 'localhost',
+    port: 5432,
+    user: 'postgres',
+    password: 'password',
+    database: 'mydb',
+  },
+  schema,
+  logger: true,
+});
+```
+
+## Environment-Specific Recommendations
+
+### Serverless (Edge)
+
+- **PostgreSQL**: Neon HTTP, Vercel Postgres
+- **MySQL**: PlanetScale Serverless
+- **SQLite**: Cloudflare D1, Turso (libSQL)
+
+### Traditional Node.js
+
+- **PostgreSQL**: node-postgres, postgres.js
+- **MySQL**: mysql2
+- **SQLite**: better-sqlite3
+
+### Long-Running Servers
+
+- **PostgreSQL**: node-postgres with connection pooling
+- **MySQL**: mysql2 with connection pooling
+- **SQLite**: better-sqlite3
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="PostgreSQL" icon="elephant" href="/drivers/postgresql">
+    Learn about PostgreSQL drivers
+  </Card>
+  <Card title="MySQL" icon="database" href="/drivers/mysql">
+    Learn about MySQL drivers
+  </Card>
+  <Card title="SQLite" icon="gear" href="/drivers/sqlite">
+    Learn about SQLite drivers
+  </Card>
+</CardGroup>

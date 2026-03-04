@@ -1,0 +1,564 @@
+---
+title: Aggregations
+description: Perform aggregate operations in Drizzle ORM including count, sum, avg, min, max, and group by with type-safe aggregate functions.
+---
+
+Drizzle ORM provides type-safe aggregate functions to perform calculations across multiple rows of data.
+
+## Aggregate Functions
+
+Drizzle supports all standard SQL aggregate functions:
+
+<CodeGroup>
+
+```typescript Count
+import { count } from 'drizzle-orm';
+import { users } from './schema';
+
+// Count all users
+const result = await db.select({ 
+  totalUsers: count() 
+}).from(users);
+
+// Count specific column (excludes nulls)
+const result = await db.select({ 
+  usersWithEmail: count(users.email) 
+}).from(users);
+```
+
+```typescript Sum
+import { sum } from 'drizzle-orm';
+import { orders } from './schema';
+
+// Sum of all order amounts
+const result = await db.select({ 
+  totalRevenue: sum(orders.amount) 
+}).from(orders);
+```
+
+```typescript Average
+import { avg } from 'drizzle-orm';
+import { products } from './schema';
+
+// Average product price
+const result = await db.select({ 
+  avgPrice: avg(products.price) 
+}).from(products);
+```
+
+```typescript Min/Max
+import { min, max } from 'drizzle-orm';
+import { employees } from './schema';
+
+// Minimum and maximum salary
+const result = await db.select({ 
+  lowestSalary: min(employees.salary),
+  highestSalary: max(employees.salary),
+}).from(employees);
+```
+
+</CodeGroup>
+
+## Count Distinct
+
+Count unique values:
+
+```typescript
+import { countDistinct } from 'drizzle-orm';
+import { orders } from './schema';
+
+// Count unique customers
+const result = await db.select({ 
+  uniqueCustomers: countDistinct(orders.customerId) 
+}).from(orders);
+```
+
+## Group By
+
+Group results by one or more columns:
+
+<CodeGroup>
+
+```typescript Single Column
+import { count } from 'drizzle-orm';
+import { users } from './schema';
+
+// Count users by role
+const result = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role);
+
+// Result:
+// [
+//   { role: 'admin', count: 5 },
+//   { role: 'user', count: 150 },
+// ]
+```
+
+```typescript Multiple Columns
+import { sum } from 'drizzle-orm';
+import { sales } from './schema';
+
+// Sum sales by region and product
+const result = await db.select({
+  region: sales.region,
+  product: sales.product,
+  totalSales: sum(sales.amount),
+})
+  .from(sales)
+  .groupBy(sales.region, sales.product);
+```
+
+```typescript With Ordering
+import { count, desc } from 'drizzle-orm';
+
+// Top 5 most common roles
+const result = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role)
+  .orderBy(desc(count()))
+  .limit(5);
+```
+
+</CodeGroup>
+
+## Having Clause
+
+Filter grouped results:
+
+<CodeGroup>
+
+```typescript Basic Having
+import { count, gt } from 'drizzle-orm';
+
+// Roles with more than 10 users
+const result = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role)
+  .having(({ count }) => gt(count, 10));
+```
+
+```typescript Multiple Conditions
+import { count, sum, and, gt } from 'drizzle-orm';
+
+// Products sold more than 100 times with total revenue > $1000
+const result = await db.select({
+  product: sales.product,
+  totalSold: count(),
+  revenue: sum(sales.amount),
+})
+  .from(sales)
+  .groupBy(sales.product)
+  .having(({ totalSold, revenue }) => and(
+    gt(totalSold, 100),
+    gt(revenue, 1000)
+  ));
+```
+
+```typescript With Aggregates
+import { avg, gt } from 'drizzle-orm';
+
+// Departments with average salary above $75,000
+const result = await db.select({
+  department: employees.department,
+  avgSalary: avg(employees.salary),
+})
+  .from(employees)
+  .groupBy(employees.department)
+  .having(({ avgSalary }) => gt(avgSalary, 75000));
+```
+
+</CodeGroup>
+
+## Aggregations with Joins
+
+Combine aggregates with joined tables:
+
+```typescript
+import { count, eq } from 'drizzle-orm';
+import { users, posts } from './schema';
+
+// Count posts per user
+const result = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postCount: count(posts.id),
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .groupBy(users.id, users.name);
+```
+
+## Multiple Aggregates
+
+Calculate several aggregates in one query:
+
+```typescript
+import { count, sum, avg, min, max } from 'drizzle-orm';
+import { orders } from './schema';
+
+const result = await db.select({
+  totalOrders: count(),
+  totalRevenue: sum(orders.amount),
+  avgOrderValue: avg(orders.amount),
+  minOrder: min(orders.amount),
+  maxOrder: max(orders.amount),
+}).from(orders);
+
+// Result:
+// [{
+//   totalOrders: 1523,
+//   totalRevenue: '45600.50',
+//   avgOrderValue: '29.95',
+//   minOrder: '5.00',
+//   maxOrder: '499.99',
+// }]
+```
+
+<Note>
+Aggregate functions return strings for numeric types to preserve precision. Convert to numbers if needed: `Number(result.totalRevenue)`
+</Note>
+
+## Conditional Aggregation
+
+Aggregate with conditions:
+
+```typescript
+import { sql, sum } from 'drizzle-orm';
+import { orders } from './schema';
+
+// Count and sum by status
+const result = await db.select({
+  totalOrders: count(),
+  completedOrders: sum(
+    sql`CASE WHEN ${orders.status} = 'completed' THEN 1 ELSE 0 END`
+  ),
+  completedRevenue: sum(
+    sql`CASE WHEN ${orders.status} = 'completed' THEN ${orders.amount} ELSE 0 END`
+  ),
+}).from(orders);
+```
+
+## Date-based Aggregations
+
+Group by time periods:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { sql, sum } from 'drizzle-orm';
+    
+    // Sales by month
+    const result = await db.select({
+      month: sql<string>`to_char(${orders.createdAt}, 'YYYY-MM')`,
+      totalSales: sum(orders.amount),
+      orderCount: count(),
+    })
+      .from(orders)
+      .groupBy(sql`to_char(${orders.createdAt}, 'YYYY-MM')`);
+    ```
+  </Tab>
+  
+  <Tab title="MySQL">
+    ```typescript
+    import { sql, sum } from 'drizzle-orm';
+    
+    // Sales by month
+    const result = await db.select({
+      month: sql<string>`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`,
+      totalSales: sum(orders.amount),
+      orderCount: count(),
+    })
+      .from(orders)
+      .groupBy(sql`DATE_FORMAT(${orders.createdAt}, '%Y-%m')`);
+    ```
+  </Tab>
+  
+  <Tab title="SQLite">
+    ```typescript
+    import { sql, sum } from 'drizzle-orm';
+    
+    // Sales by month
+    const result = await db.select({
+      month: sql<string>`strftime('%Y-%m', ${orders.createdAt})`,
+      totalSales: sum(orders.amount),
+      orderCount: count(),
+    })
+      .from(orders)
+      .groupBy(sql`strftime('%Y-%m', ${orders.createdAt})`);
+    ```
+  </Tab>
+</Tabs>
+
+## Window Functions
+
+Use window functions for advanced analytics:
+
+```typescript
+import { sql } from 'drizzle-orm';
+import { sales } from './schema';
+
+// Running total and rank
+const result = await db.select({
+  date: sales.date,
+  amount: sales.amount,
+  runningTotal: sql<number>`SUM(${sales.amount}) OVER (ORDER BY ${sales.date})`,
+  rank: sql<number>`RANK() OVER (ORDER BY ${sales.amount} DESC)`,
+}).from(sales);
+```
+
+## Statistical Aggregations
+
+Calculate statistical measures:
+
+<CodeGroup>
+
+```typescript Variance and Standard Deviation
+import { sql } from 'drizzle-orm';
+
+const result = await db.select({
+  avgPrice: avg(products.price),
+  variance: sql<number>`VARIANCE(${products.price})`,
+  stdDev: sql<number>`STDDEV(${products.price})`,
+}).from(products);
+```
+
+```typescript Percentiles (PostgreSQL)
+import { sql } from 'drizzle-orm';
+
+const result = await db.select({
+  median: sql<number>`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${products.price})`,
+  p95: sql<number>`PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ${products.price})`,
+}).from(products);
+```
+
+</CodeGroup>
+
+## Array Aggregation (PostgreSQL)
+
+Aggregate values into arrays:
+
+```typescript
+import { sql } from 'drizzle-orm';
+import { users, posts } from './schema';
+
+// Get users with array of post titles
+const result = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postTitles: sql<string[]>`array_agg(${posts.title})`,
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .groupBy(users.id, users.name);
+```
+
+## String Aggregation
+
+Concatenate strings:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { sql } from 'drizzle-orm';
+    
+    const result = await db.select({
+      userId: users.id,
+      tags: sql<string>`string_agg(${posts.tag}, ', ')`,
+    })
+      .from(users)
+      .leftJoin(posts, eq(users.id, posts.userId))
+      .groupBy(users.id);
+    ```
+  </Tab>
+  
+  <Tab title="MySQL">
+    ```typescript
+    import { sql } from 'drizzle-orm';
+    
+    const result = await db.select({
+      userId: users.id,
+      tags: sql<string>`GROUP_CONCAT(${posts.tag} SEPARATOR ', ')`,
+    })
+      .from(users)
+      .leftJoin(posts, eq(users.id, posts.userId))
+      .groupBy(users.id);
+    ```
+  </Tab>
+  
+  <Tab title="SQLite">
+    ```typescript
+    import { sql } from 'drizzle-orm';
+    
+    const result = await db.select({
+      userId: users.id,
+      tags: sql<string>`group_concat(${posts.tag}, ', ')`,
+    })
+      .from(users)
+      .leftJoin(posts, eq(users.id, posts.userId))
+      .groupBy(users.id);
+    ```
+  </Tab>
+</Tabs>
+
+## Filtering Before Aggregation
+
+Use WHERE to filter before grouping:
+
+```typescript
+import { count, eq, gte } from 'drizzle-orm';
+
+// Count only active users by role
+const result = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .where(eq(users.active, true))
+  .groupBy(users.role);
+```
+
+## Distinct Aggregations
+
+Aggregate distinct values:
+
+```typescript
+import { sql, countDistinct, sumDistinct } from 'drizzle-orm';
+
+const result = await db.select({
+  uniqueCustomers: countDistinct(orders.customerId),
+  uniqueProducts: countDistinct(orders.productId),
+  // Sum distinct amounts (unusual but possible)
+  distinctTotal: sumDistinct(orders.amount),
+}).from(orders);
+```
+
+## Nested Aggregations with Subqueries
+
+Aggregate over aggregated results:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Average of per-user post counts
+const userPostCounts = db.select({
+  userId: posts.userId,
+  postCount: count(),
+})
+  .from(posts)
+  .groupBy(posts.userId)
+  .as('user_post_counts');
+
+const result = await db.select({
+  avgPostsPerUser: avg(userPostCounts.postCount),
+})
+  .from(userPostCounts);
+```
+
+## Type Safety
+
+Aggregate functions are fully typed:
+
+```typescript
+const result = await db.select({
+  total: count(),          // SQL<number>
+  avgPrice: avg(products.price),  // SQL<string | null>
+  maxPrice: max(products.price),  // SQL<number | null>
+}).from(products);
+
+// TypeScript knows the types
+result[0].total;    // number
+result[0].avgPrice; // string | null
+result[0].maxPrice; // number | null
+```
+
+## Common Aggregation Patterns
+
+<CardGroup cols={2}>
+  <Card title="Count by Category" icon="chart-bar">
+    ```typescript
+    await db.select({
+      category: products.category,
+      count: count(),
+    })
+      .from(products)
+      .groupBy(products.category);
+    ```
+  </Card>
+  
+  <Card title="Top Performers" icon="trophy">
+    ```typescript
+    await db.select({
+      userId: sales.userId,
+      total: sum(sales.amount),
+    })
+      .from(sales)
+      .groupBy(sales.userId)
+      .orderBy(desc(sum(sales.amount)))
+      .limit(10);
+    ```
+  </Card>
+  
+  <Card title="Period Comparison" icon="calendar">
+    ```typescript
+    await db.select({
+      month: sql`DATE_TRUNC('month', created_at)`,
+      revenue: sum(orders.amount),
+    })
+      .from(orders)
+      .groupBy(sql`DATE_TRUNC('month', created_at)`);
+    ```
+  </Card>
+  
+  <Card title="Summary Statistics" icon="chart-line">
+    ```typescript
+    await db.select({
+      count: count(),
+      avg: avg(scores.value),
+      min: min(scores.value),
+      max: max(scores.value),
+    })
+      .from(scores);
+    ```
+  </Card>
+</CardGroup>
+
+## Performance Tips
+
+<Steps>
+  <Step title="Index Group By Columns">
+    Ensure columns used in GROUP BY are indexed for faster aggregation
+  </Step>
+  <Step title="Filter Before Grouping">
+    Use WHERE clauses to reduce rows before grouping
+  </Step>
+  <Step title="Limit Result Sets">
+    Use LIMIT when you only need top N results
+  </Step>
+  <Step title="Use Covering Indexes">
+    Create indexes that include all columns needed for the query
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Joins" href="/queries/joins" icon="link">
+    Combine aggregations with joins
+  </Card>
+  <Card title="Subqueries" href="/queries/subqueries" icon="diagram-nested">
+    Use aggregations in subqueries
+  </Card>
+  <Card title="Select Queries" href="/queries/select" icon="magnifying-glass">
+    Master the select query builder
+  </Card>
+</CardGroup>

@@ -1,0 +1,388 @@
+---
+title: "PostgreSQL Database API"
+description: "Complete API reference for the Drizzle PostgreSQL database client"
+---
+
+## PgDatabase
+
+The main database client class for PostgreSQL. Created by calling driver-specific functions like `drizzle()` from `drizzle-orm/node-postgres`, `drizzle-orm/postgres-js`, etc.
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const db = drizzle(pool);
+```
+
+## Query Methods
+
+### select()
+
+Creates a SELECT query. Call with no arguments to select all columns, or pass a selection object to specify columns.
+
+```typescript
+// Select all columns
+const allCars = await db.select().from(cars);
+
+// Select specific columns
+const carsIdsAndBrands = await db.select({
+  id: cars.id,
+  brand: cars.brand
+}).from(cars);
+
+// Select with SQL expressions
+const carsWithLowerBrands = await db.select({
+  id: cars.id,
+  lowerBrand: sql<string>`lower(${cars.brand})`,
+}).from(cars);
+```
+
+<ParamField path="fields" type="SelectedFields" optional>
+  Selection object mapping field names to column references or SQL expressions
+</ParamField>
+
+<ResponseField name="return" type="PgSelectBuilder">
+  Query builder for chaining additional methods like `.from()`, `.where()`, `.orderBy()`, etc.
+</ResponseField>
+
+### selectDistinct()
+
+Adds `DISTINCT` to the SELECT query, returning only unique values.
+
+```typescript
+// Select all unique rows
+await db.selectDistinct()
+  .from(cars)
+  .orderBy(cars.id, cars.brand, cars.color);
+
+// Select unique brands
+await db.selectDistinct({ brand: cars.brand })
+  .from(cars)
+  .orderBy(cars.brand);
+```
+
+<ParamField path="fields" type="SelectedFields" optional>
+  Selection object for which columns to select
+</ParamField>
+
+### selectDistinctOn()
+
+PostgreSQL-specific method that adds `DISTINCT ON` to specify how unique rows are determined.
+
+```typescript
+// Select first row for each unique brand
+await db.selectDistinctOn([cars.brand])
+  .from(cars)
+  .orderBy(cars.brand);
+
+// Select first occurrence of each brand with its color
+await db.selectDistinctOn([cars.brand], { 
+  brand: cars.brand, 
+  color: cars.color 
+})
+  .from(cars)
+  .orderBy(cars.brand, cars.color);
+```
+
+<ParamField path="on" type="(PgColumn | SQLWrapper)[]" required>
+  Array of columns or SQL expressions that define uniqueness
+</ParamField>
+
+<ParamField path="fields" type="SelectedFields" optional>
+  Selection object for which columns to select
+</ParamField>
+
+### insert()
+
+Creates an INSERT query. Use `.values()` to specify rows to insert.
+
+```typescript
+// Insert one row
+await db.insert(cars).values({ brand: 'BMW' });
+
+// Insert multiple rows
+await db.insert(cars).values([
+  { brand: 'BMW' },
+  { brand: 'Porsche' }
+]);
+
+// Insert with returning clause
+const insertedCar = await db.insert(cars)
+  .values({ brand: 'BMW' })
+  .returning();
+```
+
+<ParamField path="table" type="PgTable" required>
+  The table to insert into
+</ParamField>
+
+<ResponseField name="return" type="PgInsertBuilder">
+  Query builder with methods like `.values()`, `.onConflictDoNothing()`, `.returning()`, etc.
+</ResponseField>
+
+### update()
+
+Creates an UPDATE query. Use `.set()` to specify values and `.where()` to filter rows.
+
+```typescript
+// Update all rows
+await db.update(cars).set({ color: 'red' });
+
+// Update with filters
+await db.update(cars)
+  .set({ color: 'red' })
+  .where(eq(cars.brand, 'BMW'));
+
+// Update with returning
+const updatedCar = await db.update(cars)
+  .set({ color: 'red' })
+  .where(eq(cars.id, 1))
+  .returning();
+```
+
+<ParamField path="table" type="PgTable" required>
+  The table to update
+</ParamField>
+
+<ResponseField name="return" type="PgUpdateBuilder">
+  Query builder with methods like `.set()`, `.where()`, `.returning()`, etc.
+</ResponseField>
+
+### delete()
+
+Creates a DELETE query. Use `.where()` to specify which rows to delete.
+
+```typescript
+// Delete all rows (use with caution!)
+await db.delete(cars);
+
+// Delete with filters
+await db.delete(cars).where(eq(cars.color, 'green'));
+
+// Delete with returning
+const deletedCar = await db.delete(cars)
+  .where(eq(cars.id, 1))
+  .returning();
+```
+
+<ParamField path="table" type="PgTable" required>
+  The table to delete from
+</ParamField>
+
+<ResponseField name="return" type="PgDeleteBase">
+  Query builder with methods like `.where()`, `.returning()`, etc.
+</ResponseField>
+
+## Common Table Expressions (CTEs)
+
+### $with()
+
+Defines a CTE (Common Table Expression) for use in subsequent queries.
+
+```typescript
+// Create a subquery
+const sq = db.$with('sq').as(
+  db.select().from(users).where(eq(users.id, 42))
+);
+
+// Use it in the main query
+const result = await db.with(sq).select().from(sq);
+
+// Reference SQL values with aliases
+const sq2 = db.$with('sq').as(
+  db.select({
+    name: sql<string>`upper(${users.name})`.as('name'),
+  }).from(users)
+);
+
+const result2 = await db.with(sq2)
+  .select({ name: sq2.name })
+  .from(sq2);
+```
+
+<ParamField path="alias" type="string" required>
+  Alias name for the CTE
+</ParamField>
+
+<ResponseField name="return" type="WithBuilder">
+  Object with `.as()` method to define the CTE query
+</ResponseField>
+
+### with()
+
+Incorporates previously defined CTEs into the main query.
+
+```typescript
+const sq = db.$with('sq').as(
+  db.select().from(users).where(eq(users.id, 42))
+);
+
+const result = await db.with(sq).select().from(sq);
+```
+
+<ParamField path="queries" type="WithSubquery[]" required>
+  One or more CTEs to incorporate
+</ParamField>
+
+<ResponseField name="return" type="object">
+  Object with query methods: `select`, `selectDistinct`, `selectDistinctOn`, `update`, `insert`, `delete`
+</ResponseField>
+
+## Advanced Features
+
+### execute()
+
+Executes raw SQL queries or SQLWrapper objects.
+
+```typescript
+// Execute raw SQL string
+const result = await db.execute('SELECT * FROM users WHERE id = 1');
+
+// Execute SQL template
+const result2 = await db.execute(
+  sql`SELECT * FROM users WHERE id = ${userId}`
+);
+```
+
+<ParamField path="query" type="SQLWrapper | string" required>
+  SQL query to execute
+</ParamField>
+
+### transaction()
+
+Executes queries within a database transaction.
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  await tx.insert(posts).values({ title: 'Hello' });
+  // Both queries succeed or both fail
+});
+
+// With configuration
+await db.transaction(async (tx) => {
+  // ... queries
+}, {
+  isolationLevel: 'read committed',
+  accessMode: 'read write',
+  deferrable: false,
+});
+```
+
+<ParamField path="transaction" type="(tx: PgTransaction) => Promise<T>" required>
+  Async function that receives transaction client
+</ParamField>
+
+<ParamField path="config" type="PgTransactionConfig" optional>
+  Transaction configuration options:
+  - `isolationLevel`: `'read uncommitted'` | `'read committed'` | `'repeatable read'` | `'serializable'`
+  - `accessMode`: `'read only'` | `'read write'`
+  - `deferrable`: boolean
+</ParamField>
+
+### refreshMaterializedView()
+
+Refreshes a PostgreSQL materialized view.
+
+```typescript
+await db.refreshMaterializedView(myMaterializedView);
+
+// With CONCURRENTLY option
+await db.refreshMaterializedView(myMaterializedView)
+  .concurrently();
+```
+
+<ParamField path="view" type="PgMaterializedView" required>
+  The materialized view to refresh
+</ParamField>
+
+### $count()
+
+Counts rows in a table or view with optional filters.
+
+```typescript
+// Count all rows
+const totalUsers = await db.$count(users);
+
+// Count with filter
+const activeUsers = await db.$count(
+  users,
+  eq(users.active, true)
+);
+```
+
+<ParamField path="source" type="PgTable | PgViewBase | SQL | SQLWrapper" required>
+  Table, view, or SQL to count rows from
+</ParamField>
+
+<ParamField path="filters" type="SQL" optional>
+  Filter condition for counting
+</ParamField>
+
+## Relational Queries
+
+When using a schema with relations, the `query` object provides a type-safe relational query API.
+
+```typescript
+import * as schema from './schema';
+const db = drizzle(pool, { schema });
+
+// Query with relations
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+
+// Nested relations
+const result = await db.query.users.findMany({
+  with: {
+    posts: {
+      with: {
+        comments: true,
+      },
+    },
+  },
+});
+```
+
+## Read Replicas
+
+### withReplicas()
+
+Configures read replica support for read-write splitting.
+
+```typescript
+import { withReplicas } from 'drizzle-orm/pg-core';
+
+const primary = drizzle(primaryPool);
+const replica1 = drizzle(replica1Pool);
+const replica2 = drizzle(replica2Pool);
+
+const db = withReplicas(primary, [replica1, replica2]);
+
+// Read queries go to replicas
+await db.select().from(users); // Uses random replica
+
+// Write queries go to primary
+await db.insert(users).values({ name: 'John' }); // Uses primary
+
+// Explicitly use primary
+await db.$primary.select().from(users);
+```
+
+<ParamField path="primary" type="PgDatabase" required>
+  Primary database connection for write operations
+</ParamField>
+
+<ParamField path="replicas" type="[PgDatabase, ...PgDatabase[]]" required>
+  Array of replica connections for read operations
+</ParamField>
+
+<ParamField path="getReplica" type="(replicas: PgDatabase[]) => PgDatabase" optional>
+  Custom function to select which replica to use. Defaults to random selection.
+</ParamField>

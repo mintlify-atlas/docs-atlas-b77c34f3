@@ -1,80 +1,578 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart Guide"
+description: "Build your first type-safe database application with Drizzle ORM in minutes"
 ---
 
-## Get started in three steps
+## Build your first app
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through creating a complete database application with Drizzle ORM, from installation to executing your first queries.
 
-### Step 1: Set up your local environment
+<Note>
+  We'll use PostgreSQL with node-postgres driver in this guide, but Drizzle works the same way with MySQL and SQLite.
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Prerequisites
 
-### Step 2: Deploy your changes
+Before starting, ensure you have:
+- Node.js 18+ or Bun installed
+- A PostgreSQL database running (or use a cloud provider like Neon, Supabase, or Vercel)
+- Basic TypeScript knowledge
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## Step-by-step tutorial
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Steps>
+  <Step title="Install dependencies">
+    Create a new project and install Drizzle ORM with the PostgreSQL driver:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    <CodeGroup>
+    ```bash npm
+    npm install drizzle-orm pg
+    npm install -D drizzle-kit @types/pg tsx typescript
+    ```
 
-### Step 3: Go live
+    ```bash pnpm
+    pnpm add drizzle-orm pg
+    pnpm add -D drizzle-kit @types/pg tsx typescript
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash bun
+    bun add drizzle-orm pg
+    bun add -D drizzle-kit @types/pg
+    ```
+    </CodeGroup>
+
+    <Note>
+      **drizzle-orm**: Core ORM library
+      
+      **pg**: PostgreSQL driver
+      
+      **drizzle-kit**: CLI for migrations
+      
+      **tsx**: TypeScript execution runtime
+    </Note>
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create a `.env` file in your project root:
+
+    ```bash .env
+    DATABASE_URL=postgresql://user:password@localhost:5432/mydb
+    ```
+
+    For cloud databases, use the connection string from your provider:
+
+    <Tabs>
+      <Tab title="Neon">
+        ```bash
+        DATABASE_URL=postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
+        ```
+      </Tab>
+      <Tab title="Supabase">
+        ```bash
+        DATABASE_URL=postgresql://postgres.xxx:password@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+        ```
+      </Tab>
+      <Tab title="Vercel Postgres">
+        ```bash
+        DATABASE_URL=postgres://default:xxx@ep-xxx.us-east-1.postgres.vercel-storage.com:5432/verceldb
+        ```
+      </Tab>
+    </Tabs>
+
+    <Warning>
+      Add `.env` to your `.gitignore` to keep credentials secure.
+    </Warning>
+  </Step>
+
+  <Step title="Define your database schema">
+    Create `src/db/schema.ts` and define your tables:
+
+    ```typescript src/db/schema.ts
+    import { pgTable, serial, text, varchar, timestamp, integer } from 'drizzle-orm/pg-core';
+    import { relations } from 'drizzle-orm';
+
+    // Users table
+    export const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+      email: varchar('email', { length: 255 }).notNull().unique(),
+      name: text('name').notNull(),
+      createdAt: timestamp('created_at').defaultNow().notNull(),
+    });
+
+    // Posts table
+    export const posts = pgTable('posts', {
+      id: serial('id').primaryKey(),
+      title: varchar('title', { length: 255 }).notNull(),
+      content: text('content').notNull(),
+      authorId: integer('author_id')
+        .notNull()
+        .references(() => users.id, { onDelete: 'cascade' }),
+      publishedAt: timestamp('published_at'),
+      createdAt: timestamp('created_at').defaultNow().notNull(),
+    });
+
+    // Define relations for relational queries
+    export const usersRelations = relations(users, ({ many }) => ({
+      posts: many(posts),
+    }));
+
+    export const postsRelations = relations(posts, ({ one }) => ({
+      author: one(users, {
+        fields: [posts.authorId],
+        references: [users.id],
+      }),
+    }));
+    ```
+
+    <Note>
+      Relations are optional but enable powerful relational queries. You can skip them and use SQL joins instead.
+    </Note>
+  </Step>
+
+  <Step title="Configure Drizzle Kit">
+    Create `drizzle.config.ts` in your project root:
+
+    ```typescript drizzle.config.ts
+    import { defineConfig } from 'drizzle-kit';
+
+    export default defineConfig({
+      schema: './src/db/schema.ts',
+      out: './drizzle',
+      dialect: 'postgresql',
+      dbCredentials: {
+        url: process.env.DATABASE_URL!,
+      },
+    });
+    ```
+
+    This tells Drizzle Kit where to find your schema and how to connect to your database.
+  </Step>
+
+  <Step title="Generate and run migrations">
+    Generate SQL migrations from your schema:
+
+    ```bash
+    npx drizzle-kit generate
+    ```
+
+    This creates migration files in the `./drizzle` directory. Apply them to your database:
+
+    ```bash
+    npx drizzle-kit migrate
+    ```
+
+    <Tip>
+      During development, you can use `npx drizzle-kit push` to apply schema changes directly without generating migration files.
+    </Tip>
+  </Step>
+
+  <Step title="Initialize database connection">
+    Create `src/db/index.ts` to set up your database connection:
+
+    ```typescript src/db/index.ts
+    import { drizzle } from 'drizzle-orm/node-postgres';
+    import { Pool } from 'pg';
+    import * as schema from './schema';
+
+    // Create PostgreSQL connection pool
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL!,
+    });
+
+    // Initialize Drizzle with schema for relational queries
+    export const db = drizzle(pool, { schema });
+    ```
+
+    <Note>
+      Passing the schema enables relational queries via `db.query`. If you only need SQL-like queries, you can omit it: `drizzle(pool)`
+    </Note>
+  </Step>
+
+  <Step title="Execute your first queries">
+    Create `src/index.ts` to test your setup:
+
+    ```typescript src/index.ts
+    import { db } from './db';
+    import { users, posts } from './db/schema';
+    import { eq } from 'drizzle-orm';
+
+    async function main() {
+      // Insert a new user
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email: 'john@example.com',
+          name: 'John Doe',
+        })
+        .returning();
+
+      console.log('Created user:', newUser);
+
+      // Insert a post for the user
+      const [newPost] = await db
+        .insert(posts)
+        .values({
+          title: 'My First Post',
+          content: 'Hello, Drizzle ORM!',
+          authorId: newUser.id,
+          publishedAt: new Date(),
+        })
+        .returning();
+
+      console.log('Created post:', newPost);
+
+      // Query all users with their posts (relational query)
+      const usersWithPosts = await db.query.users.findMany({
+        with: {
+          posts: true,
+        },
+      });
+
+      console.log('Users with posts:', JSON.stringify(usersWithPosts, null, 2));
+
+      // Alternative: SQL-like join query
+      const usersAndPosts = await db
+        .select()
+        .from(users)
+        .leftJoin(posts, eq(posts.authorId, users.id));
+
+      console.log('SQL-like query:', usersAndPosts);
+    }
+
+    main()
+      .catch(console.error)
+      .finally(() => process.exit());
+    ```
+  </Step>
+
+  <Step title="Run your application">
+    Execute your TypeScript file:
+
+    ```bash
+    npx tsx src/index.ts
+    ```
+
+    You should see output showing the created user and post, followed by the query results.
+
+    <Tip>
+      Add a script to your `package.json` for convenience:
+      ```json
+      {
+        "scripts": {
+          "dev": "tsx watch src/index.ts",
+          "db:generate": "drizzle-kit generate",
+          "db:migrate": "drizzle-kit migrate",
+          "db:push": "drizzle-kit push",
+          "db:studio": "drizzle-kit studio"
+        }
+      }
+      ```
+    </Tip>
+  </Step>
+</Steps>
+
+## Query examples
+
+Now that you have a working setup, explore common query patterns:
+
+### Insert operations
+
+<CodeGroup>
+```typescript Single insert
+// Insert one user
+const user = await db.insert(users).values({
+  email: 'alice@example.com',
+  name: 'Alice Smith',
+}).returning();
+```
+
+```typescript Bulk insert
+// Insert multiple users at once
+const newUsers = await db.insert(users).values([
+  { email: 'bob@example.com', name: 'Bob Johnson' },
+  { email: 'charlie@example.com', name: 'Charlie Brown' },
+]).returning();
+```
+
+```typescript Insert with conflict
+// Insert or update on conflict
+const user = await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John Doe' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'John Updated' },
+  })
+  .returning();
+```
+</CodeGroup>
+
+### Select queries
+
+<CodeGroup>
+```typescript Basic select
+// Select all users
+const allUsers = await db.select().from(users);
+
+// Select specific columns
+const userEmails = await db
+  .select({ 
+    id: users.id, 
+    email: users.email 
+  })
+  .from(users);
+```
+
+```typescript Filtered select
+// Select with WHERE clause
+import { eq, like, and, or } from 'drizzle-orm';
+
+const user = await db
+  .select()
+  .from(users)
+  .where(eq(users.id, 1));
+
+const searchResults = await db
+  .select()
+  .from(users)
+  .where(like(users.name, '%John%'));
+```
+
+```typescript Relational query
+// Fetch users with their posts
+const usersWithPosts = await db.query.users.findMany({
+  where: (users, { eq }) => eq(users.id, 1),
+  with: {
+    posts: {
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+    },
+  },
+});
+```
+</CodeGroup>
+
+### Update operations
+
+<CodeGroup>
+```typescript Update single
+// Update a specific user
+const updated = await db
+  .update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1))
+  .returning();
+```
+
+```typescript Update multiple
+// Update all unpublished posts
+const published = await db
+  .update(posts)
+  .set({ publishedAt: new Date() })
+  .where(eq(posts.publishedAt, null))
+  .returning();
+```
+</CodeGroup>
+
+### Delete operations
+
+<CodeGroup>
+```typescript Delete single
+// Delete a specific user
+const deleted = await db
+  .delete(users)
+  .where(eq(users.id, 1))
+  .returning();
+```
+
+```typescript Delete with condition
+// Delete old posts
+import { lt } from 'drizzle-orm';
+
+const oneYearAgo = new Date();
+oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+await db
+  .delete(posts)
+  .where(lt(posts.createdAt, oneYearAgo));
+```
+</CodeGroup>
+
+### Joins and aggregations
+
+<CodeGroup>
+```typescript Join query
+import { eq } from 'drizzle-orm';
+
+// Join users and posts
+const result = await db
+  .select({
+    userName: users.name,
+    postTitle: posts.title,
+  })
+  .from(users)
+  .innerJoin(posts, eq(posts.authorId, users.id));
+```
+
+```typescript Aggregation
+import { sql } from 'drizzle-orm';
+
+// Count posts per user
+const postCounts = await db
+  .select({
+    userId: users.id,
+    userName: users.name,
+    postCount: sql<number>`count(${posts.id})`
+  })
+  .from(users)
+  .leftJoin(posts, eq(posts.authorId, users.id))
+  .groupBy(users.id);
+```
+</CodeGroup>
+
+## Explore Drizzle Studio
+
+Drizzle Kit includes a visual database browser:
+
+```bash
+npx drizzle-kit studio
+```
+
+This opens a web interface at `https://local.drizzle.studio` where you can:
+- Browse all tables and data
+- Execute queries visually
+- Edit records directly
+- View table relationships
+
+<Note>
+  Drizzle Studio is perfect for development and debugging. It reads your schema file for full type information.
+</Note>
+
+## Database-specific guides
+
+This quickstart used PostgreSQL, but Drizzle works identically with other databases:
+
+<CardGroup cols={3}>
+  <Card title="MySQL" icon="database" href="/drivers/mysql">
+    Complete guide for MySQL and MariaDB
+  </Card>
+  <Card title="SQLite" icon="hard-drive" href="/drivers/sqlite">
+    Guide for SQLite, including D1 and Turso
+  </Card>
+  <Card title="All Drivers" icon="plug" href="/drivers/overview">
+    Overview of all supported database drivers
+  </Card>
+</CardGroup>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you have a working application, dive deeper into Drizzle's features:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Schema Declaration" icon="diagram-project" href="/core/schema-declaration">
+    Learn advanced schema features: constraints, indexes, custom types
+  </Card>
+  <Card title="Queries" icon="magnifying-glass" href="/core/queries">
+    Master complex queries, joins, and aggregations
+  </Card>
+  <Card title="Relations" icon="link" href="/core/relations">
+    Build type-safe relational queries
+  </Card>
+  <Card title="Migrations" icon="code-branch" href="/core/migrations">
+    Advanced migration workflows and strategies
+  </Card>
+  <Card title="Transactions" icon="arrows-rotate" href="/core/transactions">
+    Execute atomic operations with transactions
+  </Card>
+  <Card title="Best Practices" icon="star" href="/guides/best-practices">
+    Production-ready patterns and optimizations
+  </Card>
 </CardGroup>
 
+## Common patterns
+
+### Connection pooling
+
+For production applications, configure connection pooling:
+
+```typescript
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20, // Maximum connections
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+export const db = drizzle(pool, { schema });
+```
+
+### Environment-based configuration
+
+Manage different database configurations per environment:
+
+```typescript src/db/config.ts
+const config = {
+  development: {
+    url: process.env.DEV_DATABASE_URL!,
+    max: 5,
+  },
+  production: {
+    url: process.env.DATABASE_URL!,
+    max: 20,
+    ssl: { rejectUnauthorized: false },
+  },
+};
+
+const env = process.env.NODE_ENV || 'development';
+export const dbConfig = config[env];
+```
+
+### Prepared statements
+
+Optimize repeated queries with prepared statements:
+
+```typescript
+import { eq } from 'drizzle-orm';
+
+const getUserById = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Execute multiple times efficiently
+const user1 = await getUserById.execute({ id: 1 });
+const user2 = await getUserById.execute({ id: 2 });
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection refused error">
+    Ensure your database is running and the connection string is correct. Check:
+    - Database host and port
+    - Username and password
+    - Database name
+    - SSL requirements (add `?sslmode=require` for cloud databases)
+  </Accordion>
+
+  <Accordion title="Type errors in queries">
+    Make sure your schema types are correctly imported:
+    ```typescript
+    import { users } from './db/schema'; // Not './db/schema.ts'
+    ```
+    Restart your TypeScript server in VSCode: Cmd+Shift+P > "Restart TS Server"
+  </Accordion>
+
+  <Accordion title="Migration errors">
+    If migrations fail:
+    1. Check `drizzle.config.ts` points to the correct schema file
+    2. Verify database credentials
+    3. Review generated SQL in `./drizzle` folder
+    4. Run `npx drizzle-kit drop` to reset (development only)
+  </Accordion>
+</AccordionGroup>
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Need help?** Join our [Discord community](https://driz.link/discord) or check out [GitHub Discussions](https://github.com/drizzle-team/drizzle-orm/discussions) for support.
 </Note>

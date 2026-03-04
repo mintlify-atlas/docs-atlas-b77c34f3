@@ -1,0 +1,323 @@
+---
+title: SQLite Table
+description: Define SQLite tables with sqliteTable() and configure schema structure
+---
+
+## sqliteTable()
+
+Defines a SQLite table with columns and optional constraints.
+
+### Signature
+
+```typescript
+function sqliteTable<
+  TTableName extends string,
+  TColumnsMap extends Record<string, SQLiteColumnBuilderBase>,
+>(
+  name: TTableName,
+  columns: TColumnsMap | ((columnTypes: SQLiteColumnBuilders) => TColumnsMap),
+  extraConfig?: (self: BuildColumns<...>) => SQLiteTableExtraConfigValue[]
+): SQLiteTableWithColumns<...>
+```
+
+### Parameters
+
+<ParamField path="name" type="string" required>
+  The name of the table in the database
+</ParamField>
+
+<ParamField path="columns" type="object | function" required>
+  Object mapping column names to column definitions, or a function that receives column builders
+</ParamField>
+
+<ParamField path="extraConfig" type="function">
+  Optional function to define indexes, foreign keys, checks, and composite primary keys
+</ParamField>
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Object syntax
+import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+```
+
+```typescript Function syntax
+import { sqliteTable } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', (t) => ({
+  id: t.integer('id').primaryKey({ autoIncrement: true }),
+  name: t.text('name').notNull(),
+  email: t.text('email').notNull().unique(),
+  createdAt: t.integer('created_at', { mode: 'timestamp' }).notNull(),
+}));
+```
+</CodeGroup>
+
+### Table with Indexes
+
+```typescript
+import { sqliteTable, integer, text, index } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  age: integer('age'),
+}, (t) => [
+  index('name_idx').on(t.name),
+  index('email_idx').on(t.email),
+]);
+```
+
+### Table with Foreign Keys
+
+```typescript
+import { sqliteTable, integer, text, foreignKey } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+});
+
+export const posts = sqliteTable('posts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  title: text('title').notNull(),
+  authorId: integer('author_id').notNull(),
+}, (t) => [
+  foreignKey({
+    columns: [t.authorId],
+    foreignColumns: [users.id],
+  }).onDelete('cascade'),
+]);
+```
+
+### Table with Composite Primary Key
+
+```typescript
+import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
+
+export const userRoles = sqliteTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+  assignedAt: integer('assigned_at', { mode: 'timestamp' }),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.roleId] }),
+]);
+```
+
+### Table with Check Constraints
+
+```typescript
+import { sqliteTable, integer, text, check, sql } from 'drizzle-orm/sqlite-core';
+
+export const products = sqliteTable('products', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  price: integer('price').notNull(),
+  stock: integer('stock').notNull(),
+}, (t) => [
+  check('price_positive', sql`${t.price} > 0`),
+  check('stock_non_negative', sql`${t.stock} >= 0`),
+]);
+```
+
+### Table with Unique Constraints
+
+```typescript
+import { sqliteTable, integer, text, unique } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  email: text('email').notNull(),
+  username: text('username').notNull(),
+  organizationId: integer('organization_id').notNull(),
+}, (t) => [
+  unique('email_org_unique').on(t.email, t.organizationId),
+]);
+```
+
+## sqliteTableCreator()
+
+Creates a custom table creator function with a name transformation function.
+
+```typescript
+function sqliteTableCreator(
+  customizeTableName: (name: string) => string
+): SQLiteTableFn
+```
+
+### Use Case: Table Prefixes
+
+```typescript
+import { sqliteTableCreator } from 'drizzle-orm/sqlite-core';
+
+const sqliteTable = sqliteTableCreator((name) => `myapp_${name}`);
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey(),
+  name: text('name'),
+});
+// Creates table: myapp_users
+```
+
+### Use Case: Schema Prefixes
+
+```typescript
+const publicTable = sqliteTableCreator((name) => `public_${name}`);
+const adminTable = sqliteTableCreator((name) => `admin_${name}`);
+
+export const users = publicTable('users', {
+  id: integer('id').primaryKey(),
+});
+// Creates: public_users
+
+export const admins = adminTable('users', {
+  id: integer('id').primaryKey(),
+});
+// Creates: admin_users
+```
+
+## Table Configuration Helpers
+
+### index()
+
+Creates an index on one or more columns.
+
+```typescript
+function index(name: string): IndexBuilderOn
+```
+
+<CodeGroup>
+```typescript Single column
+index('name_idx').on(t.name)
+```
+
+```typescript Multiple columns
+index('name_email_idx').on(t.name, t.email)
+```
+
+```typescript Partial index
+index('active_users_idx')
+  .on(t.email)
+  .where(sql`${t.active} = 1`)
+```
+</CodeGroup>
+
+### uniqueIndex()
+
+Creates a unique index.
+
+```typescript
+function uniqueIndex(name: string): IndexBuilderOn
+```
+
+```typescript
+uniqueIndex('email_idx').on(t.email)
+```
+
+### primaryKey()
+
+Defines a composite primary key.
+
+```typescript
+function primaryKey(config: {
+  name?: string;
+  columns: [Column, ...Column[]];
+}): PrimaryKeyBuilder
+```
+
+```typescript
+primaryKey({ columns: [t.userId, t.roleId] })
+```
+
+### foreignKey()
+
+Defines a foreign key relationship.
+
+```typescript
+function foreignKey(config: {
+  name?: string;
+  columns: Column[];
+  foreignColumns: Column[];
+}): ForeignKeyBuilder
+```
+
+<ParamField path="columns" type="Column[]" required>
+  The columns in the current table that reference the foreign table
+</ParamField>
+
+<ParamField path="foreignColumns" type="Column[]" required>
+  The columns in the foreign table being referenced
+</ParamField>
+
+<ParamField path="name" type="string">
+  Optional custom name for the foreign key constraint
+</ParamField>
+
+```typescript
+foreignKey({
+  columns: [t.authorId],
+  foreignColumns: [users.id],
+})
+  .onDelete('cascade')
+  .onUpdate('restrict')
+```
+
+### check()
+
+Defines a check constraint.
+
+```typescript
+function check(name: string, value: SQL): CheckBuilder
+```
+
+```typescript
+check('price_positive', sql`${t.price} > 0`)
+```
+
+### unique()
+
+Defines a unique constraint on one or more columns.
+
+```typescript
+function unique(name?: string): UniqueConstraintBuilder
+```
+
+```typescript
+unique('email_unique').on(t.email, t.organizationId)
+```
+
+## Foreign Key Actions
+
+When defining foreign keys, you can specify actions for updates and deletes:
+
+<ParamField path="onDelete" type="UpdateDeleteAction">
+  Action when the referenced row is deleted
+</ParamField>
+
+<ParamField path="onUpdate" type="UpdateDeleteAction">
+  Action when the referenced row is updated
+</ParamField>
+
+**Available Actions:**
+- `'cascade'` - Propagate the change to dependent rows
+- `'restrict'` - Prevent the change if dependent rows exist
+- `'no action'` - No action (SQLite default)
+- `'set null'` - Set the foreign key column to NULL
+- `'set default'` - Set the foreign key column to its default value
+
+```typescript
+foreignKey({
+  columns: [t.authorId],
+  foreignColumns: [users.id],
+})
+  .onDelete('cascade')  // Delete posts when user is deleted
+  .onUpdate('restrict')  // Prevent user ID updates if posts exist
+```

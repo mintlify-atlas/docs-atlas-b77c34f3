@@ -1,0 +1,617 @@
+---
+title: Custom Types
+description: Extend Drizzle with custom column types for domain-specific data handling
+---
+
+## Overview
+
+Drizzle's custom type API allows you to create specialized column types that map between TypeScript types and database types. This is useful for:
+
+- **Domain-specific types**: Coordinates, currency, encrypted strings
+- **Custom serialization**: JSON with validation, compressed data
+- **Type transformations**: Automatic parsing and formatting
+- **Database extensions**: PostGIS, vector types, custom SQL types
+
+## Creating Custom Types
+
+### Basic Custom Type
+
+Use the `customType()` function to define a new column type:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+const customText = customType<{ data: string }>({
+  dataType() {
+    return 'text';
+  },
+});
+
+// Use in schema
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  bio: customText('bio'),
+});
+```
+
+### Type with Data Transformation
+
+Map between JavaScript and database representations:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+// Store JSON with automatic serialization
+const jsonb = customType<{ data: any }>({
+  dataType() {
+    return 'jsonb';
+  },
+  toDriver(value: any): string {
+    return JSON.stringify(value);
+  },
+  fromDriver(value: string): any {
+    return JSON.parse(value);
+  },
+});
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  metadata: jsonb('metadata'),
+});
+
+// Usage
+await db.insert(users).values({
+  metadata: { theme: 'dark', locale: 'en' }, // Automatically stringified
+});
+
+const result = await db.select().from(users);
+console.log(result[0].metadata.theme); // Automatically parsed
+```
+
+## Type Parameters
+
+### Data Type
+
+Define the TypeScript type for your column:
+
+```typescript
+interface Coordinate {
+  lat: number;
+  lng: number;
+}
+
+const point = customType<{ data: Coordinate }>({
+  dataType() {
+    return 'point';
+  },
+  toDriver(value: Coordinate): string {
+    return `(${value.lat},${value.lng})`;
+  },
+  fromDriver(value: string): Coordinate {
+    const [lat, lng] = value
+      .replace(/[()]/g, '')
+      .split(',')
+      .map(Number);
+    return { lat, lng };
+  },
+});
+
+export const locations = pgTable('locations', {
+  id: serial('id').primaryKey(),
+  coords: point('coords'),
+});
+
+// Type-safe usage
+await db.insert(locations).values({
+  coords: { lat: 40.7128, lng: -74.0060 }, // NYC
+});
+```
+
+### Driver Data Type
+
+Specify the database driver's representation:
+
+```typescript
+const encrypted = customType<{
+  data: string;
+  driverData: Buffer;
+}>({
+  dataType() {
+    return 'bytea';
+  },
+  toDriver(value: string): Buffer {
+    // Encrypt the string
+    return Buffer.from(encrypt(value));
+  },
+  fromDriver(value: Buffer): string {
+    // Decrypt the buffer
+    return decrypt(value.toString());
+  },
+});
+```
+
+### Config Type
+
+Add configuration parameters:
+
+```typescript
+const varchar = customType<{
+  data: string;
+  config: { length: number };
+  configRequired: true;
+}>({
+  dataType(config) {
+    return `varchar(${config.length})`;
+  },
+});
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  username: varchar('username', { length: 50 }),
+  bio: varchar('bio', { length: 500 }),
+});
+```
+
+## Real-World Examples
+
+### Currency Type
+
+Handle monetary values with precision:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+interface Money {
+  amount: number;
+  currency: string;
+}
+
+const money = customType<{ data: Money }>({
+  dataType() {
+    return 'jsonb';
+  },
+  toDriver(value: Money): string {
+    // Store as cents to avoid floating point issues
+    return JSON.stringify({
+      amount: Math.round(value.amount * 100),
+      currency: value.currency,
+    });
+  },
+  fromDriver(value: string): Money {
+    const parsed = JSON.parse(value);
+    return {
+      amount: parsed.amount / 100,
+      currency: parsed.currency,
+    };
+  },
+});
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  price: money('price').notNull(),
+});
+
+// Usage
+await db.insert(products).values({
+  name: 'Premium Plan',
+  price: { amount: 29.99, currency: 'USD' },
+});
+```
+
+### Date Range Type
+
+PostgreSQL date ranges:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+interface DateRange {
+  start: Date;
+  end: Date;
+}
+
+const daterange = customType<{ data: DateRange }>({
+  dataType() {
+    return 'daterange';
+  },
+  toDriver(value: DateRange): string {
+    const start = value.start.toISOString().split('T')[0];
+    const end = value.end.toISOString().split('T')[0];
+    return `[${start},${end}]`;
+  },
+  fromDriver(value: string): DateRange {
+    const match = value.match(/\[(.+?),(.+?)\]/);
+    if (!match) throw new Error('Invalid daterange format');
+    return {
+      start: new Date(match[1]),
+      end: new Date(match[2]),
+    };
+  },
+});
+
+export const bookings = pgTable('bookings', {
+  id: serial('id').primaryKey(),
+  period: daterange('period').notNull(),
+});
+```
+
+### PostGIS Geography Type
+
+Work with geospatial data:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+interface GeoPoint {
+  type: 'Point';
+  coordinates: [number, number]; // [longitude, latitude]
+}
+
+const geography = customType<{ data: GeoPoint }>({
+  dataType() {
+    return 'geography(Point, 4326)';
+  },
+  toDriver(value: GeoPoint) {
+    return sql`ST_GeogFromGeoJSON(${JSON.stringify(value)})`;
+  },
+  fromDriver(value: any): GeoPoint {
+    if (typeof value === 'string') {
+      return JSON.parse(value);
+    }
+    return value;
+  },
+});
+
+export const places = pgTable('places', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  location: geography('location').notNull(),
+});
+
+// Usage
+await db.insert(places).values({
+  name: 'Central Park',
+  location: {
+    type: 'Point',
+    coordinates: [-73.965355, 40.782865],
+  },
+});
+
+// Query with distance
+const nearby = await db
+  .select()
+  .from(places)
+  .where(
+    sql`ST_DWithin(
+      ${places.location},
+      ST_GeogFromGeoJSON(${JSON.stringify({
+        type: 'Point',
+        coordinates: [-73.97, 40.78],
+      })}),
+      1000
+    )`
+  );
+```
+
+### Validated Email Type
+
+Add validation during serialization:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+const email = customType<{ data: string }>({
+  dataType() {
+    return 'text';
+  },
+  toDriver(value: string): string {
+    if (!isValidEmail(value)) {
+      throw new Error(`Invalid email: ${value}`);
+    }
+    return value.toLowerCase();
+  },
+});
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: email('email').notNull(),
+});
+
+// Throws error if invalid
+await db.insert(users).values({
+  email: 'JOHN@EXAMPLE.COM', // Stored as 'john@example.com'
+});
+```
+
+### UUID v7 Type
+
+Implement UUID v7 with timestamp ordering:
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+import { uuidv7 } from 'uuidv7';
+
+const uuidv7Type = customType<{
+  data: string;
+  default: true;
+}>({
+  dataType() {
+    return 'uuid';
+  },
+  toDriver(value: string): string {
+    return value;
+  },
+  fromDriver(value: string): string {
+    return value;
+  },
+});
+
+export const users = pgTable('users', {
+  id: uuidv7Type('id').primaryKey().$defaultFn(() => uuidv7()),
+  name: text('name').notNull(),
+});
+```
+
+## Database-Specific Types
+
+### PostgreSQL
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+// Array type
+const textArray = customType<{ data: string[] }>({
+  dataType() {
+    return 'text[]';
+  },
+  toDriver(value: string[]): string[] {
+    return value;
+  },
+});
+
+// HSTORE type
+const hstore = customType<{ data: Record<string, string> }>({
+  dataType() {
+    return 'hstore';
+  },
+  toDriver(value: Record<string, string>): string {
+    return Object.entries(value)
+      .map(([k, v]) => `"${k}"=>"${v}"`)
+      .join(',');
+  },
+  fromDriver(value: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    const pairs = value.match(/"([^"]+)"=>"([^"]+)"/g) || [];
+    for (const pair of pairs) {
+      const match = pair.match(/"([^"]+)"=>"([^"]+)"/);
+      if (match) result[match[1]] = match[2];
+    }
+    return result;
+  },
+});
+```
+
+### MySQL
+
+```typescript
+import { customType } from 'drizzle-orm/mysql-core';
+
+// SET type
+const set = customType<{
+  data: string[];
+  config: { values: readonly string[] };
+  configRequired: true;
+}>({
+  dataType(config) {
+    return `set(${config.values.map(v => `'${v}'`).join(',')})`;
+  },
+  toDriver(value: string[]): string {
+    return value.join(',');
+  },
+  fromDriver(value: string): string[] {
+    return value.split(',').filter(Boolean);
+  },
+});
+
+export const users = mysqlTable('users', {
+  id: int('id').primaryKey(),
+  permissions: set('permissions', {
+    values: ['read', 'write', 'delete'] as const,
+  }),
+});
+```
+
+### SQLite
+
+```typescript
+import { customType } from 'drizzle-orm/sqlite-core';
+
+// Boolean stored as integer
+const boolean = customType<{ data: boolean }>({
+  dataType() {
+    return 'integer';
+  },
+  toDriver(value: boolean): number {
+    return value ? 1 : 0;
+  },
+  fromDriver(value: number): boolean {
+    return value === 1;
+  },
+});
+
+// Date stored as ISO string
+const timestamp = customType<{ data: Date }>({
+  dataType() {
+    return 'text';
+  },
+  toDriver(value: Date): string {
+    return value.toISOString();
+  },
+  fromDriver(value: string): Date {
+    return new Date(value);
+  },
+});
+```
+
+## Advanced Patterns
+
+### Configurable Precision
+
+```typescript
+const decimal = customType<{
+  data: number;
+  config: { precision: number; scale: number };
+  configRequired: true;
+}>({
+  dataType(config) {
+    return `decimal(${config.precision},${config.scale})`;
+  },
+  toDriver(value: number): string {
+    return value.toFixed(this.config?.scale || 2);
+  },
+  fromDriver(value: string): number {
+    return parseFloat(value);
+  },
+});
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  price: decimal('price', { precision: 10, scale: 2 }),
+  weight: decimal('weight', { precision: 8, scale: 3 }),
+});
+```
+
+### NotNull by Default
+
+```typescript
+const customSerial = customType<{
+  data: number;
+  notNull: true;
+  default: true;
+}>({
+  dataType() {
+    return 'serial';
+  },
+});
+
+export const items = pgTable('items', {
+  id: customSerial('id').primaryKey(),
+  // id is automatically NOT NULL
+});
+```
+
+### With Validation Schema
+
+Integrate with Zod or other validators:
+
+```typescript
+import { z } from 'zod';
+import { customType } from 'drizzle-orm/pg-core';
+
+const phoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/);
+
+const phone = customType<{ data: string }>({
+  dataType() {
+    return 'text';
+  },
+  toDriver(value: string): string {
+    const parsed = phoneSchema.safeParse(value);
+    if (!parsed.success) {
+      throw new Error(`Invalid phone number: ${value}`);
+    }
+    return value;
+  },
+});
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  phone: phone('phone'),
+});
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Keep transformations simple">
+    Complex logic should be in your application layer, not in type mappings.
+  </Step>
+  
+  <Step title="Handle null values explicitly">
+    Check for null in `fromDriver` and `toDriver` methods.
+  </Step>
+  
+  <Step title="Use appropriate database types">
+    Choose the database type that best matches your data semantics.
+  </Step>
+  
+  <Step title="Validate in toDriver">
+    Catch invalid data before it reaches the database.
+  </Step>
+  
+  <Step title="Document your custom types">
+    Add JSDoc comments explaining the type's behavior and constraints.
+  </Step>
+</Steps>
+
+## Type Safety
+
+Custom types maintain full TypeScript inference:
+
+```typescript
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  location: point('location'),
+});
+
+// TypeScript infers the type
+type User = typeof users.$inferSelect;
+// { id: number; location: Coordinate | null }
+
+type NewUser = typeof users.$inferInsert;
+// { id?: number; location?: Coordinate | null }
+
+// Type-safe insert
+await db.insert(users).values({
+  location: { lat: 40.7128, lng: -74.0060 },
+  // location: { x: 1, y: 2 }, // TypeScript error!
+});
+```
+
+<Tip>
+Export your custom types from a shared module to reuse them across multiple tables and maintain consistency.
+</Tip>
+
+## Common Pitfalls
+
+<Warning>
+Avoid throwing errors in `fromDriver` as it will break queries. Return a safe default or handle errors gracefully.
+</Warning>
+
+```typescript
+// ✗ BAD: Throwing in fromDriver
+const badType = customType<{ data: number }>({
+  dataType() { return 'text'; },
+  fromDriver(value: string): number {
+    const num = parseInt(value);
+    if (isNaN(num)) {
+      throw new Error('Invalid number'); // Will break queries!
+    }
+    return num;
+  },
+});
+
+// ✓ GOOD: Handle errors gracefully
+const goodType = customType<{ data: number }>({
+  dataType() { return 'text'; },
+  fromDriver(value: string): number {
+    const num = parseInt(value);
+    return isNaN(num) ? 0 : num; // Return safe default
+  },
+});
+```

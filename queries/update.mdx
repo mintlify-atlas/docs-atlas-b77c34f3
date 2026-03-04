@@ -1,0 +1,400 @@
+---
+title: Update Queries
+description: Update existing data in your database using Drizzle ORM's type-safe update query builder with filtering, joins, and returning capabilities.
+---
+
+Drizzle ORM provides a type-safe API for updating existing records in your database tables.
+
+## Basic Update
+
+Update rows with the `set()` method:
+
+```typescript
+import { db } from './db';
+import { users } from './schema';
+import { eq } from 'drizzle-orm';
+
+const result = await db.update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1));
+```
+
+<Warning>
+Always include a `where()` clause unless you intentionally want to update all rows in the table.
+</Warning>
+
+## Update Multiple Columns
+
+Update several columns at once:
+
+```typescript
+await db.update(users)
+  .set({
+    name: 'John Doe',
+    email: 'newemail@example.com',
+    age: 31,
+    updatedAt: new Date(),
+  })
+  .where(eq(users.id, 1));
+```
+
+## Update with Expressions
+
+Use SQL expressions and column references:
+
+<CodeGroup>
+
+```typescript Increment Values
+import { sql } from 'drizzle-orm';
+
+// Increment age by 1
+await db.update(users)
+  .set({ age: sql`${users.age} + 1` })
+  .where(eq(users.id, 1));
+
+// Increment views count
+await db.update(posts)
+  .set({ views: sql`${posts.views} + 1` })
+  .where(eq(posts.id, 100));
+```
+
+```typescript String Operations
+import { sql } from 'drizzle-orm';
+
+// Concatenate strings
+await db.update(users)
+  .set({ 
+    name: sql`${users.name} || ' (Updated)'`,
+  })
+  .where(eq(users.id, 1));
+
+// Update with current timestamp
+await db.update(users)
+  .set({ updatedAt: sql`now()` })
+  .where(eq(users.active, true));
+```
+
+```typescript Column to Column
+// Copy value from one column to another
+await db.update(users)
+  .set({ 
+    displayName: users.name,
+    lastLogin: users.createdAt,
+  })
+  .where(eq(users.id, 1));
+```
+
+</CodeGroup>
+
+## Conditional Updates
+
+Update rows based on multiple conditions:
+
+```typescript
+import { and, eq, gt } from 'drizzle-orm';
+
+// Update users matching multiple conditions
+await db.update(users)
+  .set({ role: 'senior' })
+  .where(and(
+    eq(users.active, true),
+    gt(users.experience, 5)
+  ));
+
+// Update with OR condition
+import { or } from 'drizzle-orm';
+
+await db.update(users)
+  .set({ verified: true })
+  .where(or(
+    eq(users.email, 'admin@example.com'),
+    eq(users.role, 'admin')
+  ));
+```
+
+## Update with Returning
+
+Get the updated row(s) back from the database:
+
+<CodeGroup>
+
+```typescript Return All Columns
+const [updatedUser] = await db.update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1))
+  .returning();
+
+console.log(updatedUser); // Full user object
+```
+
+```typescript Return Specific Columns
+const [result] = await db.update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1))
+  .returning({
+    id: users.id,
+    name: users.name,
+    updatedAt: users.updatedAt,
+  });
+
+// result: { id: number; name: string; updatedAt: Date; }
+```
+
+```typescript Return Multiple Rows
+const updated = await db.update(users)
+  .set({ verified: true })
+  .where(eq(users.role, 'admin'))
+  .returning();
+
+// Array of all updated users
+console.log(`Updated ${updated.length} users`);
+```
+
+</CodeGroup>
+
+<Warning>
+`.returning()` is supported in PostgreSQL, SQLite, and MySQL 8.0+. It's not available in older MySQL versions.
+</Warning>
+
+## Update with Joins (PostgreSQL)
+
+Update using data from joined tables:
+
+<CodeGroup>
+
+```typescript Using FROM clause
+import { db } from './db';
+import { users, departments } from './schema';
+
+// Update users based on department data
+await db.update(users)
+  .set({ 
+    salary: sql`${users.salary} * ${departments.salaryMultiplier}`,
+  })
+  .from(departments)
+  .where(eq(users.departmentId, departments.id));
+```
+
+```typescript With Inner Join
+// Update with join condition
+await db.update(users)
+  .set({ status: 'active' })
+  .from(departments)
+  .innerJoin(departments, eq(users.departmentId, departments.id))
+  .where(eq(departments.active, true));
+```
+
+```typescript Multiple Joins
+import { posts, categories } from './schema';
+
+await db.update(posts)
+  .set({ featured: true })
+  .from(categories)
+  .innerJoin(categories, eq(posts.categoryId, categories.id))
+  .where(eq(categories.name, 'Featured'));
+```
+
+</CodeGroup>
+
+## Bulk Updates
+
+Update multiple rows efficiently:
+
+```typescript
+import { inArray } from 'drizzle-orm';
+
+// Update multiple users by ID
+await db.update(users)
+  .set({ status: 'inactive' })
+  .where(inArray(users.id, [1, 2, 3, 4, 5]));
+
+// Update based on array of values
+const emails = ['user1@example.com', 'user2@example.com'];
+await db.update(users)
+  .set({ verified: true })
+  .where(inArray(users.email, emails));
+```
+
+## Update All Rows
+
+Update every row in a table (use with caution):
+
+```typescript
+// Update all users
+await db.update(users)
+  .set({ migrated: true });
+
+// This affects ALL rows - be careful!
+```
+
+<Warning>
+Omitting the `where()` clause updates ALL rows. Always double-check before running such queries.
+</Warning>
+
+## Pattern Matching Updates
+
+Update based on pattern matching:
+
+```typescript
+import { like, ilike } from 'drizzle-orm';
+
+// Update users with gmail addresses
+await db.update(users)
+  .set({ emailProvider: 'gmail' })
+  .where(like(users.email, '%@gmail.com'));
+
+// Case-insensitive pattern match
+await db.update(posts)
+  .set({ category: 'technology' })
+  .where(ilike(posts.title, '%tech%'));
+```
+
+## Null and Not Null Updates
+
+Update based on null values:
+
+```typescript
+import { isNull, isNotNull } from 'drizzle-orm';
+
+// Set default value for null columns
+await db.update(users)
+  .set({ bio: 'No bio provided' })
+  .where(isNull(users.bio));
+
+// Update only rows with existing data
+await db.update(users)
+  .set({ verified: true })
+  .where(isNotNull(users.email));
+```
+
+## Update with Subqueries
+
+Use subqueries to calculate update values:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Update with aggregated value from subquery
+await db.update(users)
+  .set({
+    postCount: sql`(
+      SELECT COUNT(*) 
+      FROM ${posts} 
+      WHERE ${posts.userId} = ${users.id}
+    )`,
+  })
+  .where(eq(users.id, 1));
+```
+
+## Type Safety
+
+Drizzle ensures type safety for updates:
+
+```typescript
+await db.update(users)
+  .set({
+    name: 'John Doe',
+    age: 30,
+    // TypeScript error: 'invalid' is not a valid column
+    // invalid: 'value',
+    // TypeScript error: age must be a number
+    // age: 'thirty',
+  })
+  .where(eq(users.id, 1));
+```
+
+## Update in Transactions
+
+Update within a transaction for consistency:
+
+```typescript
+await db.transaction(async (tx) => {
+  // Update user
+  await tx.update(users)
+    .set({ credits: sql`${users.credits} - 100` })
+    .where(eq(users.id, 1));
+
+  // Record transaction
+  await tx.insert(transactions).values({
+    userId: 1,
+    amount: -100,
+    type: 'purchase',
+  });
+});
+```
+
+## Common Update Patterns
+
+<Steps>
+  <Step title="Toggle Boolean">
+    ```typescript
+    await db.update(users)
+      .set({ active: sql`NOT ${users.active}` })
+      .where(eq(users.id, 1));
+    ```
+  </Step>
+  
+  <Step title="Touch Updated Timestamp">
+    ```typescript
+    await db.update(users)
+      .set({ updatedAt: sql`now()` })
+      .where(eq(users.id, 1));
+    ```
+  </Step>
+  
+  <Step title="Increment Counter">
+    ```typescript
+    await db.update(posts)
+      .set({ views: sql`${posts.views} + 1` })
+      .where(eq(posts.slug, 'my-post'));
+    ```
+  </Step>
+  
+  <Step title="JSON Field Update (PostgreSQL)">
+    ```typescript
+    await db.update(users)
+      .set({ 
+        settings: sql`jsonb_set(
+          ${users.settings}, 
+          '{notifications}', 
+          'true'
+        )`,
+      })
+      .where(eq(users.id, 1));
+    ```
+  </Step>
+</Steps>
+
+## Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Index Your Where Columns" icon="gauge-high">
+    Ensure columns used in WHERE clauses are indexed for faster updates
+  </Card>
+  <Card title="Batch Updates" icon="layer-group">
+    Use `inArray()` to update multiple rows in one query instead of loops
+  </Card>
+  <Card title="Avoid Full Table Updates" icon="triangle-exclamation">
+    Always use WHERE clauses unless you really need to update all rows
+  </Card>
+  <Card title="Use Transactions" icon="arrows-rotate">
+    Wrap related updates in transactions to ensure data consistency
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Delete Queries" href="/queries/delete" icon="trash">
+    Learn how to delete data
+  </Card>
+  <Card title="Select Queries" href="/queries/select" icon="magnifying-glass">
+    Query your updated data
+  </Card>
+  <Card title="Joins" href="/queries/joins" icon="link">
+    Use joins in your updates
+  </Card>
+  <Card title="Transactions" href="/core/transactions" icon="arrows-rotate">
+    Ensure data consistency
+  </Card>
+</CardGroup>

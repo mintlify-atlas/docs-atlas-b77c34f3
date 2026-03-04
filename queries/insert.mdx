@@ -1,0 +1,373 @@
+---
+title: Insert Queries
+description: Insert data into your database using Drizzle ORM's type-safe insert query builder with support for single and bulk inserts, conflict handling, and returning values.
+---
+
+Drizzle ORM provides a type-safe and intuitive API for inserting data into your database tables.
+
+## Basic Insert
+
+Insert a single row into a table:
+
+```typescript
+import { db } from './db';
+import { users } from './schema';
+
+const result = await db.insert(users).values({
+  name: 'John Doe',
+  email: 'john@example.com',
+  age: 30,
+});
+```
+
+## Bulk Insert
+
+Insert multiple rows in a single query:
+
+```typescript
+const result = await db.insert(users).values([
+  {
+    name: 'John Doe',
+    email: 'john@example.com',
+    age: 30,
+  },
+  {
+    name: 'Jane Smith',
+    email: 'jane@example.com',
+    age: 28,
+  },
+  {
+    name: 'Bob Johnson',
+    email: 'bob@example.com',
+    age: 35,
+  },
+]);
+```
+
+<Note>
+Bulk inserts are more efficient than multiple single inserts as they execute in a single database round-trip.
+</Note>
+
+## Insert with Returning
+
+Get the inserted row(s) back from the database:
+
+<CodeGroup>
+
+```typescript Return All Columns
+const [newUser] = await db.insert(users)
+  .values({
+    name: 'John Doe',
+    email: 'john@example.com',
+  })
+  .returning();
+
+// newUser contains all columns including auto-generated id
+console.log(newUser.id);
+```
+
+```typescript Return Specific Columns
+const [result] = await db.insert(users)
+  .values({
+    name: 'John Doe',
+    email: 'john@example.com',
+  })
+  .returning({
+    id: users.id,
+    name: users.name,
+  });
+
+// result: { id: number; name: string; }
+```
+
+```typescript Bulk Insert with Returning
+const newUsers = await db.insert(users)
+  .values([
+    { name: 'John', email: 'john@example.com' },
+    { name: 'Jane', email: 'jane@example.com' },
+  ])
+  .returning();
+
+// Returns array with all inserted rows
+```
+
+</CodeGroup>
+
+<Warning>
+`.returning()` is supported in PostgreSQL, SQLite, and MySQL 8.0+. It's not available in older MySQL versions.
+</Warning>
+
+## On Conflict Do Nothing
+
+Ignore inserts that would violate constraints:
+
+<CodeGroup>
+
+```typescript PostgreSQL
+import { db } from './db';
+
+// Ignore conflicts on email column
+await db.insert(users)
+  .values({ name: 'John', email: 'john@example.com' })
+  .onConflictDoNothing();
+
+// Ignore conflicts on specific columns
+await db.insert(users)
+  .values({ name: 'John', email: 'john@example.com' })
+  .onConflictDoNothing({ target: users.email });
+```
+
+```typescript SQLite
+import { db } from './db';
+
+// SQLite: use onConflictDoNothing
+await db.insert(users)
+  .values({ name: 'John', email: 'john@example.com' })
+  .onConflictDoNothing();
+```
+
+```typescript MySQL
+import { db } from './db';
+
+// MySQL: use onDuplicateKeyUpdate or ignore
+await db.insert(users)
+  .values({ name: 'John', email: 'john@example.com' })
+  .onDuplicateKeyUpdate({ set: { name: users.name } });
+```
+
+</CodeGroup>
+
+## On Conflict Do Update (Upsert)
+
+Update existing rows when conflicts occur:
+
+<CodeGroup>
+
+```typescript Basic Upsert
+import { db } from './db';
+
+// Update name if email already exists
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John Doe' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'John Doe Updated' },
+  });
+```
+
+```typescript Use Excluded Values
+// Use the values that would have been inserted
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John Doe' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { 
+      name: sql`excluded.name`,
+      updatedAt: sql`now()`,
+    },
+  });
+```
+
+```typescript Conditional Update
+import { sql } from 'drizzle-orm';
+
+// Only update if certain conditions are met
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John', age: 30 })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: sql`excluded.name` },
+    where: sql`${users.age} < excluded.age`,
+  });
+```
+
+```typescript Multiple Columns
+// Conflict on composite unique constraint
+await db.insert(users)
+  .values({ email: 'john@example.com', username: 'john' })
+  .onConflictDoUpdate({
+    target: [users.email, users.username],
+    set: { name: sql`excluded.name` },
+  });
+```
+
+</CodeGroup>
+
+## Insert from Select
+
+Insert data from another query:
+
+```typescript
+import { db } from './db';
+import { users, archivedUsers } from './schema';
+
+// Copy inactive users to archive
+await db.insert(archivedUsers)
+  .select(
+    db.select().from(users).where(eq(users.active, false))
+  );
+```
+
+<Note>
+The selected columns must match the target table's column structure.
+</Note>
+
+## Insert with SQL Expressions
+
+Use SQL expressions in insert values:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+await db.insert(users).values({
+  name: 'John Doe',
+  email: 'john@example.com',
+  createdAt: sql`now()`,
+  metadata: sql`jsonb_build_object('source', 'web')`,
+});
+```
+
+## Insert with Default Values
+
+Omit columns with default values:
+
+```typescript
+// If createdAt has a default value in schema
+await db.insert(users).values({
+  name: 'John Doe',
+  email: 'john@example.com',
+  // createdAt will use database default
+});
+```
+
+## PostgreSQL: Override System Values
+
+Insert into generated columns:
+
+```typescript
+// PostgreSQL only: override GENERATED ALWAYS columns
+await db.insert(users)
+  .overridingSystemValue()
+  .values({
+    id: 100, // Override auto-increment
+    name: 'John',
+    email: 'john@example.com',
+  });
+```
+
+## Type Safety
+
+Drizzle provides complete type safety for inserts:
+
+```typescript
+await db.insert(users).values({
+  name: 'John Doe',
+  email: 'john@example.com',
+  age: 30,
+  // TypeScript error: 'invalid' is not a valid column
+  // invalid: 'value'
+  // TypeScript error: age must be a number
+  // age: 'thirty'
+});
+```
+
+## With Clause (CTE)
+
+Use Common Table Expressions with inserts:
+
+```typescript
+const newUserIds = db.$with('new_users').as(
+  db.insert(users)
+    .values([{ name: 'John' }, { name: 'Jane' }])
+    .returning({ id: users.id })
+);
+
+const result = await db.with(newUserIds)
+  .select()
+  .from(newUserIds);
+```
+
+## Batch Inserts
+
+For very large datasets, use batch processing:
+
+```typescript
+const BATCH_SIZE = 1000;
+const largeDataset = [...]; // Array of 10,000 items
+
+for (let i = 0; i < largeDataset.length; i += BATCH_SIZE) {
+  const batch = largeDataset.slice(i, i + BATCH_SIZE);
+  await db.insert(users).values(batch);
+}
+```
+
+## Insert Examples by Database
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    // PostgreSQL specific features
+    await db.insert(users)
+      .values({ name: 'John', email: 'john@example.com' })
+      .onConflictDoUpdate({
+        target: users.email,
+        set: { name: sql`excluded.name` },
+        where: sql`${users.updatedAt} < excluded.updated_at`,
+      })
+      .returning();
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    // MySQL upsert
+    await db.insert(users)
+      .values({ name: 'John', email: 'john@example.com' })
+      .onDuplicateKeyUpdate({
+        set: { name: sql`VALUES(name)` },
+      });
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    // SQLite conflict handling
+    await db.insert(users)
+      .values({ name: 'John', email: 'john@example.com' })
+      .onConflictDoUpdate({
+        target: users.email,
+        set: { name: sql`excluded.name` },
+      })
+      .returning();
+    ```
+  </Tab>
+</Tabs>
+
+## Performance Tips
+
+<Steps>
+  <Step title="Use Bulk Inserts">
+    Insert multiple rows in a single query instead of multiple queries
+  </Step>
+  <Step title="Batch Large Datasets">
+    Split very large datasets (10k+ rows) into batches of 1000-5000 rows
+  </Step>
+  <Step title="Use Transactions">
+    Wrap multiple inserts in a transaction for consistency and performance
+  </Step>
+  <Step title="Avoid Returning When Unnecessary">
+    Only use `.returning()` when you need the inserted data back
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Update Queries" href="/queries/update" icon="pen">
+    Learn how to update existing data
+  </Card>
+  <Card title="Select Queries" href="/queries/select" icon="magnifying-glass">
+    Query and filter your data
+  </Card>
+  <Card title="Transactions" href="/core/transactions" icon="arrows-rotate">
+    Use transactions for data consistency
+  </Card>
+</CardGroup>

@@ -1,0 +1,585 @@
+---
+title: "Schema Validation"
+description: "Generate runtime validation schemas from Drizzle ORM with Zod, Valibot, TypeBox, and ArkType"
+---
+
+Drizzle provides official plugins to generate runtime validation schemas from your Drizzle ORM schemas. These plugins automatically create validators for insert, update, and select operations, ensuring type safety at both compile time and runtime.
+
+## Available Validators
+
+Drizzle supports four popular validation libraries:
+
+<CardGroup cols={2}>
+  <Card title="Zod" icon="z" href="#zod">
+    The most popular TypeScript-first schema validation library
+  </Card>
+  <Card title="Valibot" icon="v" href="#valibot">
+    Modular and lightweight validation library
+  </Card>
+  <Card title="TypeBox" icon="cube" href="#typebox">
+    JSON Schema Type Builder with static type inference
+  </Card>
+  <Card title="ArkType" icon="a" href="#arktype">
+    TypeScript-native runtime validation with 1:1 type/validator syntax
+  </Card>
+</CardGroup>
+
+## Zod
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install drizzle-zod zod
+```
+
+```bash pnpm
+pnpm add drizzle-zod zod
+```
+
+```bash yarn
+yarn add drizzle-zod zod
+```
+
+```bash bun
+bun add drizzle-zod zod
+```
+</CodeGroup>
+
+### Basic Usage
+
+```typescript
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { createInsertSchema, createSelectSchema, createUpdateSchema } from 'drizzle-zod';
+import { z } from 'zod';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  role: text('role', { enum: ['admin', 'user'] }).notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Generate schemas
+const insertUserSchema = createInsertSchema(users);
+const selectUserSchema = createSelectSchema(users);
+const updateUserSchema = createUpdateSchema(users);
+
+// Use in your application
+const newUser = insertUserSchema.parse({
+  name: 'John Doe',
+  email: 'john@example.com',
+  role: 'user',
+});
+```
+
+### Customizing Schemas
+
+#### Override Field Validation
+
+```typescript
+import { createInsertSchema } from 'drizzle-zod';
+import { z } from 'zod';
+
+const insertUserSchema = createInsertSchema(users, {
+  email: z.string().email(),
+  name: z.string().min(3).max(255),
+  role: z.enum(['admin', 'user', 'moderator']),
+});
+```
+
+#### Refine Fields
+
+Refine fields before they become optional/nullable:
+
+```typescript
+const insertUserSchema = createInsertSchema(users, {
+  email: (schema) => schema.email(),
+  id: (schema) => schema.positive(),
+});
+```
+
+#### Pick Specific Fields
+
+```typescript
+const createUserRequestSchema = insertUserSchema.pick({
+  name: true,
+  email: true,
+  role: true,
+});
+
+const updateUserRequestSchema = updateUserSchema.pick({
+  name: true,
+  email: true,
+}).partial();
+```
+
+### API Validation Example
+
+```typescript
+import { createInsertSchema } from 'drizzle-zod';
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+const insertUserSchema = createInsertSchema(users).omit({ id: true });
+
+app.post('/users', async (req, res) => {
+  // Validate request body
+  const result = insertUserSchema.safeParse(req.body);
+  
+  if (!result.success) {
+    return res.status(400).json({ errors: result.error.errors });
+  }
+  
+  // Insert validated data
+  const [user] = await db.insert(users).values(result.data).returning();
+  
+  res.json(user);
+});
+```
+
+### Features
+
+- Create select schemas for tables, views, and enums
+- Create insert and update schemas for tables
+- Full type inference from Drizzle schemas
+- Supports all PostgreSQL, MySQL, and SQLite dialects
+- Refine and customize generated schemas
+
+## Valibot
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install drizzle-valibot valibot
+```
+
+```bash pnpm
+pnpm add drizzle-valibot valibot
+```
+
+```bash yarn
+yarn add drizzle-valibot valibot
+```
+
+```bash bun
+bun add drizzle-valibot valibot
+```
+</CodeGroup>
+
+### Basic Usage
+
+```typescript
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { createInsertSchema, createSelectSchema, createUpdateSchema } from 'drizzle-valibot';
+import { parse, email, minLength, pipe, string } from 'valibot';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  role: text('role', { enum: ['admin', 'user'] }).notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Generate schemas
+const insertUserSchema = createInsertSchema(users);
+const selectUserSchema = createSelectSchema(users);
+const updateUserSchema = createUpdateSchema(users);
+
+// Validate data
+const validUser = parse(insertUserSchema, {
+  name: 'John Doe',
+  email: 'john@example.com',
+  role: 'user',
+});
+```
+
+### Customizing Schemas
+
+```typescript
+import { createInsertSchema } from 'drizzle-valibot';
+import { email, minLength, pipe, string } from 'valibot';
+
+const insertUserSchema = createInsertSchema(users, {
+  email: pipe(string(), email()),
+  name: pipe(string(), minLength(3)),
+  role: string(),
+});
+```
+
+### Refining Fields
+
+```typescript
+const insertUserSchema = createInsertSchema(users, {
+  id: (schema) => pipe(schema, minValue(1)),
+  email: (schema) => pipe(schema, email()),
+});
+```
+
+## TypeBox
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install drizzle-typebox @sinclair/typebox
+```
+
+```bash pnpm
+pnpm add drizzle-typebox @sinclair/typebox
+```
+
+```bash yarn
+yarn add drizzle-typebox @sinclair/typebox
+```
+
+```bash bun
+bun add drizzle-typebox @sinclair/typebox
+```
+</CodeGroup>
+
+### Basic Usage
+
+```typescript
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { createInsertSchema, createSelectSchema, createUpdateSchema } from 'drizzle-typebox';
+import { Type } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  role: text('role', { enum: ['admin', 'user'] }).notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Generate schemas
+const insertUserSchema = createInsertSchema(users);
+const selectUserSchema = createSelectSchema(users);
+const updateUserSchema = createUpdateSchema(users);
+
+// Validate data
+const isValid = Value.Check(insertUserSchema, {
+  name: 'John Doe',
+  email: 'john@example.com',
+  role: 'user',
+});
+```
+
+### Customizing Schemas
+
+```typescript
+import { createInsertSchema } from 'drizzle-typebox';
+import { Type } from '@sinclair/typebox';
+
+const insertUserSchema = createInsertSchema(users, {
+  email: Type.String({ format: 'email' }),
+  name: Type.String({ minLength: 3, maxLength: 255 }),
+  role: Type.String(),
+});
+```
+
+### Refining Fields
+
+```typescript
+const insertUserSchema = createInsertSchema(users, {
+  id: (schema) => Type.Number({ ...schema, minimum: 1 }),
+  email: Type.String({ format: 'email' }),
+});
+```
+
+## ArkType
+
+### Installation
+
+<CodeGroup>
+```bash npm
+npm install drizzle-arktype arktype
+```
+
+```bash pnpm
+pnpm add drizzle-arktype arktype
+```
+
+```bash yarn
+yarn add drizzle-arktype arktype
+```
+
+```bash bun
+bun add drizzle-arktype arktype
+```
+</CodeGroup>
+
+### Basic Usage
+
+```typescript
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { createInsertSchema, createSelectSchema, createUpdateSchema } from 'drizzle-arktype';
+import { type } from 'arktype';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  role: text('role', { enum: ['admin', 'user'] }).notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Generate schemas
+const insertUserSchema = createInsertSchema(users);
+const selectUserSchema = createSelectSchema(users);
+const updateUserSchema = createUpdateSchema(users);
+
+// Validate data
+const result = insertUserSchema({
+  name: 'John Doe',
+  email: 'john@example.com',
+  role: 'user',
+});
+```
+
+### Customizing Schemas
+
+```typescript
+import { createInsertSchema } from 'drizzle-arktype';
+import { type } from 'arktype';
+
+const insertUserSchema = createInsertSchema(users, {
+  email: type('string.email'),
+  name: type('string'),
+  role: type('"admin" | "user"'),
+});
+```
+
+### Refining Fields
+
+```typescript
+const insertUserSchema = createInsertSchema(users, {
+  id: (schema) => schema.atLeast(1),
+  role: type('string'),
+});
+```
+
+## Comparison
+
+<Tabs>
+  <Tab title="Bundle Size">
+    | Library | Minified | Gzipped |
+    |---------|----------|----------|
+    | Valibot | Smallest | ~5 KB    |
+    | ArkType | Small    | ~12 KB   |
+    | TypeBox | Medium   | ~15 KB   |
+    | Zod     | Larger   | ~14 KB   |
+  </Tab>
+
+  <Tab title="Performance">
+    | Library | Speed    | Validation |
+    |---------|----------|------------|
+    | ArkType | Fastest  | Runtime    |
+    | TypeBox | Fast     | Runtime    |
+    | Valibot | Fast     | Runtime    |
+    | Zod     | Good     | Runtime    |
+  </Tab>
+
+  <Tab title="Developer Experience">
+    | Library | TypeScript | API Style  |
+    |---------|------------|------------|
+    | Zod     | Excellent  | Chainable  |
+    | Valibot | Excellent  | Functional |
+    | ArkType | Excellent  | String DSL |
+    | TypeBox | Good       | JSON Schema|
+  </Tab>
+</Tabs>
+
+## Common Patterns
+
+### Multi-step Form Validation
+
+```typescript
+import { createInsertSchema } from 'drizzle-zod';
+import { z } from 'zod';
+
+const userSchema = createInsertSchema(users);
+
+// Step 1: Basic info
+const step1Schema = userSchema.pick({
+  name: true,
+  email: true,
+});
+
+// Step 2: Additional info
+const step2Schema = userSchema.pick({
+  role: true,
+  bio: true,
+});
+
+// Combine for final validation
+const completeUserSchema = step1Schema.merge(step2Schema);
+```
+
+### API Request/Response Validation
+
+```typescript
+import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
+
+// Request validation (insert)
+const createUserRequest = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Response validation (select)
+const userResponse = createSelectSchema(users).omit({
+  password: true, // Never expose passwords
+});
+
+app.post('/users', async (req, res) => {
+  const data = createUserRequest.parse(req.body);
+  const [user] = await db.insert(users).values(data).returning();
+  const response = userResponse.parse(user);
+  res.json(response);
+});
+```
+
+### Partial Updates
+
+```typescript
+import { createUpdateSchema } from 'drizzle-zod';
+
+const updateUserSchema = createUpdateSchema(users)
+  .omit({ id: true, createdAt: true })
+  .partial(); // All fields optional
+
+app.patch('/users/:id', async (req, res) => {
+  const data = updateUserSchema.parse(req.body);
+  const [user] = await db
+    .update(users)
+    .set(data)
+    .where(eq(users.id, req.params.id))
+    .returning();
+  res.json(user);
+});
+```
+
+### Nested Relations Validation
+
+```typescript
+import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
+import { z } from 'zod';
+
+const insertPostSchema = createInsertSchema(posts);
+const insertCommentSchema = createInsertSchema(comments);
+
+// Validate post with nested comments
+const createPostWithComments = insertPostSchema.extend({
+  comments: z.array(insertCommentSchema.omit({ postId: true })).optional(),
+});
+```
+
+## Framework Integration
+
+### Next.js Server Actions
+
+```typescript app/actions.ts
+'use server';
+
+import { createInsertSchema } from 'drizzle-zod';
+import { db } from '@/db';
+
+const insertUserSchema = createInsertSchema(users).omit({ id: true });
+
+export async function createUser(formData: FormData) {
+  const data = insertUserSchema.parse(Object.fromEntries(formData));
+  return await db.insert(users).values(data).returning();
+}
+```
+
+### tRPC Integration
+
+```typescript server/routers/users.ts
+import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
+import { router, publicProcedure } from '../trpc';
+
+const insertUserSchema = createInsertSchema(users).omit({ id: true });
+const selectUserSchema = createSelectSchema(users);
+
+export const usersRouter = router({
+  create: publicProcedure
+    .input(insertUserSchema)
+    .output(selectUserSchema)
+    .mutation(async ({ input }) => {
+      const [user] = await db.insert(users).values(input).returning();
+      return user;
+    }),
+});
+```
+
+### Hono Validation
+
+```typescript
+import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { createInsertSchema } from 'drizzle-zod';
+
+const app = new Hono();
+const insertUserSchema = createInsertSchema(users);
+
+app.post('/users', zValidator('json', insertUserSchema), async (c) => {
+  const data = c.req.valid('json');
+  const [user] = await db.insert(users).values(data).returning();
+  return c.json(user);
+});
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Generate once, reuse everywhere">
+    Create validation schemas once and export them for use across your application:
+    ```typescript schemas/users.ts
+    export const insertUserSchema = createInsertSchema(users);
+    export const selectUserSchema = createSelectSchema(users);
+    export const updateUserSchema = createUpdateSchema(users);
+    ```
+  </Step>
+
+  <Step title="Customize for specific use cases">
+    Create specialized schemas for different operations:
+    ```typescript
+    export const createUserApiSchema = insertUserSchema.omit({ id: true });
+    export const publicUserSchema = selectUserSchema.omit({ password: true });
+    ```
+  </Step>
+
+  <Step title="Use safe parsing in production">
+    Use `safeParse` to handle validation errors gracefully:
+    ```typescript
+    const result = insertUserSchema.safeParse(data);
+    if (!result.success) {
+      return { error: result.error.flatten() };
+    }
+    ```
+  </Step>
+
+  <Step title="Type inference">
+    Infer TypeScript types from your validation schemas:
+    ```typescript
+    import { z } from 'zod';
+    type InsertUser = z.infer<typeof insertUserSchema>;
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Drizzle Seed" icon="seedling" href="/ecosystem/drizzle-seed">
+    Generate test data that validates against your schemas
+  </Card>
+  <Card title="API Development" icon="code" href="/guides/api-development">
+    Build type-safe APIs with Drizzle and validation
+  </Card>
+</CardGroup>

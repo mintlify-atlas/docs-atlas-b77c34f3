@@ -1,0 +1,972 @@
+---
+title: "Migrating from Prisma"
+description: "Complete guide to migrating your existing Prisma project to Drizzle ORM"
+---
+
+Migrating from Prisma to Drizzle ORM is straightforward and can be done incrementally. This guide covers the migration process, API differences, and how to preserve your existing data.
+
+## Why Migrate to Drizzle?
+
+Developers choose Drizzle over Prisma for several reasons:
+
+<CardGroup cols={2}>
+
+<Card title="Type Safety" icon="shield">
+  Drizzle provides true TypeScript type inference without code generation
+</Card>
+
+<Card title="SQL-like API" icon="code">
+  Write queries that look like SQL but with full type safety
+</Card>
+
+<Card title="Zero Dependencies" icon="feather">
+  Minimal bundle size with no runtime dependencies
+</Card>
+
+<Card title="Edge Compatible" icon="globe">
+  Works in Cloudflare Workers, Vercel Edge, and other edge runtimes
+</Card>
+
+<Card title="Performance" icon="rocket">
+  No query engine overhead, direct database driver access
+</Card>
+
+<Card title="SQL Control" icon="wrench">
+  Full control over generated SQL with raw query support
+</Card>
+
+</CardGroup>
+
+## Migration Strategies
+
+### Strategy 1: Side-by-Side (Recommended)
+
+Run Prisma and Drizzle together during migration:
+
+<Steps>
+
+<Step title="Install Drizzle">
+  ```bash
+  npm install drizzle-orm
+  npm install -D drizzle-kit
+  ```
+</Step>
+
+<Step title="Generate Drizzle schema from Prisma">
+  Use Drizzle Kit to introspect your existing database:
+  
+  ```bash
+  npx drizzle-kit introspect
+  ```
+  
+  This creates a Drizzle schema matching your current database structure.
+</Step>
+
+<Step title="Migrate routes incrementally">
+  Convert one route/feature at a time from Prisma to Drizzle:
+  
+  ```typescript
+  // Before: Prisma
+  const users = await prisma.user.findMany();
+  
+  // After: Drizzle
+  const users = await db.select().from(usersTable);
+  ```
+</Step>
+
+<Step title="Remove Prisma when complete">
+  Once all code is migrated, uninstall Prisma:
+  
+  ```bash
+  npm uninstall prisma @prisma/client
+  ```
+</Step>
+
+</Steps>
+
+### Strategy 2: Fresh Start
+
+Start a new project with Drizzle and migrate data:
+
+1. Create new Drizzle schema from scratch
+2. Export data from Prisma database
+3. Import data into new Drizzle-managed database
+4. Update application code
+
+## Schema Conversion
+
+### Prisma Schema to Drizzle
+
+Here's how Prisma schema elements map to Drizzle:
+
+#### Basic Model
+
+<CodeGroup>
+
+```prisma Prisma Schema
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+
+```typescript Drizzle Schema (PostgreSQL)
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('User', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  name: text('name'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow().$onUpdate(() => new Date()),
+});
+```
+
+```typescript Drizzle Schema (MySQL)
+import { mysqlTable, serial, varchar, timestamp } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('User', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  name: varchar('name', { length: 255 }),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow().onUpdateNow(),
+});
+```
+
+</CodeGroup>
+
+#### Enums
+
+<CodeGroup>
+
+```prisma Prisma Schema
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id   Int  @id @default(autoincrement())
+  role Role @default(USER)
+}
+```
+
+```typescript Drizzle Schema (PostgreSQL)
+import { pgTable, serial, pgEnum } from 'drizzle-orm/pg-core';
+
+export const roleEnum = pgEnum('Role', ['USER', 'ADMIN']);
+
+export const users = pgTable('User', {
+  id: serial('id').primaryKey(),
+  role: roleEnum('role').notNull().default('USER'),
+});
+```
+
+```typescript Drizzle Schema (MySQL)
+import { mysqlTable, serial, mysqlEnum } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('User', {
+  id: serial('id').primaryKey(),
+  role: mysqlEnum('role', ['USER', 'ADMIN']).notNull().default('USER'),
+});
+```
+
+</CodeGroup>
+
+#### Relations
+
+<CodeGroup>
+
+```prisma Prisma Schema
+model User {
+  id    Int    @id @default(autoincrement())
+  posts Post[]
+}
+
+model Post {
+  id       Int    @id @default(autoincrement())
+  title    String
+  userId   Int
+  user     User   @relation(fields: [userId], references: [id])
+}
+```
+
+```typescript Drizzle Schema
+import { pgTable, serial, text, integer } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+export const users = pgTable('User', {
+  id: serial('id').primaryKey(),
+});
+
+export const posts = pgTable('Post', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  userId: integer('userId').notNull().references(() => users.id),
+});
+
+// Define relations for relational queries
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  user: one(users, {
+    fields: [posts.userId],
+    references: [users.id],
+  }),
+}));
+```
+
+</CodeGroup>
+
+#### Many-to-Many Relations
+
+<CodeGroup>
+
+```prisma Prisma Schema
+model Post {
+  id         Int        @id @default(autoincrement())
+  categories Category[]
+}
+
+model Category {
+  id    Int    @id @default(autoincrement())
+  posts Post[]
+}
+```
+
+```typescript Drizzle Schema
+import { pgTable, serial, integer, primaryKey } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+export const posts = pgTable('Post', {
+  id: serial('id').primaryKey(),
+});
+
+export const categories = pgTable('Category', {
+  id: serial('id').primaryKey(),
+});
+
+// Junction table (Prisma creates this automatically as _CategoryToPost)
+export const postsToCategories = pgTable('_CategoryToPost', {
+  postId: integer('postId').notNull().references(() => posts.id),
+  categoryId: integer('categoryId').notNull().references(() => categories.id),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.postId, t.categoryId] }),
+}));
+
+export const postsRelations = relations(posts, ({ many }) => ({
+  categories: many(postsToCategories),
+}));
+
+export const categoriesRelations = relations(categories, ({ many }) => ({
+  posts: many(postsToCategories),
+}));
+
+export const postsToCategoriesRelations = relations(postsToCategories, ({ one }) => ({
+  post: one(posts, {
+    fields: [postsToCategories.postId],
+    references: [posts.id],
+  }),
+  category: one(categories, {
+    fields: [postsToCategories.categoryId],
+    references: [categories.id],
+  }),
+}));
+```
+
+</CodeGroup>
+
+## Query API Comparison
+
+### Finding Records
+
+<CodeGroup>
+
+```typescript Prisma
+// Find all
+const users = await prisma.user.findMany();
+
+// Find with where clause
+const activeUsers = await prisma.user.findMany({
+  where: { active: true },
+});
+
+// Find one
+const user = await prisma.user.findUnique({
+  where: { id: 1 },
+});
+
+// Find first
+const firstUser = await prisma.user.findFirst({
+  where: { active: true },
+});
+```
+
+```typescript Drizzle
+import { eq } from 'drizzle-orm';
+
+// Find all
+const users = await db.select().from(usersTable);
+
+// Find with where clause
+const activeUsers = await db.select()
+  .from(usersTable)
+  .where(eq(usersTable.active, true));
+
+// Find one (use limit if multiple may exist)
+const user = await db.select()
+  .from(usersTable)
+  .where(eq(usersTable.id, 1))
+  .limit(1);
+
+// Find first
+const firstUser = await db.select()
+  .from(usersTable)
+  .where(eq(usersTable.active, true))
+  .limit(1);
+```
+
+</CodeGroup>
+
+### Creating Records
+
+<CodeGroup>
+
+```typescript Prisma
+const user = await prisma.user.create({
+  data: {
+    email: 'john@example.com',
+    name: 'John',
+  },
+});
+
+// Create many
+await prisma.user.createMany({
+  data: [
+    { email: 'john@example.com', name: 'John' },
+    { email: 'jane@example.com', name: 'Jane' },
+  ],
+});
+```
+
+```typescript Drizzle
+const user = await db.insert(usersTable)
+  .values({
+    email: 'john@example.com',
+    name: 'John',
+  })
+  .returning(); // Returns inserted record
+
+// Insert many
+await db.insert(usersTable)
+  .values([
+    { email: 'john@example.com', name: 'John' },
+    { email: 'jane@example.com', name: 'Jane' },
+  ]);
+```
+
+</CodeGroup>
+
+### Updating Records
+
+<CodeGroup>
+
+```typescript Prisma
+const user = await prisma.user.update({
+  where: { id: 1 },
+  data: { name: 'John Updated' },
+});
+
+// Update many
+await prisma.user.updateMany({
+  where: { active: false },
+  data: { deleted: true },
+});
+```
+
+```typescript Drizzle
+import { eq } from 'drizzle-orm';
+
+const user = await db.update(usersTable)
+  .set({ name: 'John Updated' })
+  .where(eq(usersTable.id, 1))
+  .returning();
+
+// Update many
+await db.update(usersTable)
+  .set({ deleted: true })
+  .where(eq(usersTable.active, false));
+```
+
+</CodeGroup>
+
+### Deleting Records
+
+<CodeGroup>
+
+```typescript Prisma
+await prisma.user.delete({
+  where: { id: 1 },
+});
+
+await prisma.user.deleteMany({
+  where: { active: false },
+});
+```
+
+```typescript Drizzle
+import { eq } from 'drizzle-orm';
+
+await db.delete(usersTable)
+  .where(eq(usersTable.id, 1));
+
+await db.delete(usersTable)
+  .where(eq(usersTable.active, false));
+```
+
+</CodeGroup>
+
+### Filtering
+
+<CodeGroup>
+
+```typescript Prisma
+// Equals
+const users = await prisma.user.findMany({
+  where: { role: 'ADMIN' },
+});
+
+// Not equals
+const users = await prisma.user.findMany({
+  where: { role: { not: 'ADMIN' } },
+});
+
+// In array
+const users = await prisma.user.findMany({
+  where: { role: { in: ['ADMIN', 'MODERATOR'] } },
+});
+
+// Greater than
+const users = await prisma.user.findMany({
+  where: { age: { gt: 18 } },
+});
+
+// Contains (string)
+const users = await prisma.user.findMany({
+  where: { name: { contains: 'John' } },
+});
+```
+
+```typescript Drizzle
+import { eq, ne, inArray, gt, like } from 'drizzle-orm';
+
+// Equals
+const users = await db.select()
+  .from(usersTable)
+  .where(eq(usersTable.role, 'ADMIN'));
+
+// Not equals
+const users = await db.select()
+  .from(usersTable)
+  .where(ne(usersTable.role, 'ADMIN'));
+
+// In array
+const users = await db.select()
+  .from(usersTable)
+  .where(inArray(usersTable.role, ['ADMIN', 'MODERATOR']));
+
+// Greater than
+const users = await db.select()
+  .from(usersTable)
+  .where(gt(usersTable.age, 18));
+
+// Contains (string)
+const users = await db.select()
+  .from(usersTable)
+  .where(like(usersTable.name, '%John%'));
+```
+
+</CodeGroup>
+
+### Combining Filters
+
+<CodeGroup>
+
+```typescript Prisma
+// AND
+const users = await prisma.user.findMany({
+  where: {
+    AND: [
+      { active: true },
+      { role: 'ADMIN' },
+    ],
+  },
+});
+
+// OR
+const users = await prisma.user.findMany({
+  where: {
+    OR: [
+      { role: 'ADMIN' },
+      { role: 'MODERATOR' },
+    ],
+  },
+});
+```
+
+```typescript Drizzle
+import { eq, and, or } from 'drizzle-orm';
+
+// AND
+const users = await db.select()
+  .from(usersTable)
+  .where(
+    and(
+      eq(usersTable.active, true),
+      eq(usersTable.role, 'ADMIN')
+    )
+  );
+
+// OR
+const users = await db.select()
+  .from(usersTable)
+  .where(
+    or(
+      eq(usersTable.role, 'ADMIN'),
+      eq(usersTable.role, 'MODERATOR')
+    )
+  );
+```
+
+</CodeGroup>
+
+### Selecting Specific Fields
+
+<CodeGroup>
+
+```typescript Prisma
+const users = await prisma.user.findMany({
+  select: {
+    id: true,
+    name: true,
+    email: true,
+  },
+});
+```
+
+```typescript Drizzle
+const users = await db.select({
+  id: usersTable.id,
+  name: usersTable.name,
+  email: usersTable.email,
+}).from(usersTable);
+```
+
+</CodeGroup>
+
+### Relations and Joins
+
+<CodeGroup>
+
+```typescript Prisma
+const users = await prisma.user.findMany({
+  include: {
+    posts: true,
+  },
+});
+
+// Nested includes
+const users = await prisma.user.findMany({
+  include: {
+    posts: {
+      include: {
+        comments: true,
+      },
+    },
+  },
+});
+```
+
+```typescript Drizzle (Relational API)
+// Requires relations definitions in schema
+const users = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+
+// Nested relations
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      with: {
+        comments: true,
+      },
+    },
+  },
+});
+```
+
+```typescript Drizzle (Manual Joins)
+import { eq } from 'drizzle-orm';
+
+const usersWithPosts = await db.select()
+  .from(usersTable)
+  .leftJoin(postsTable, eq(usersTable.id, postsTable.userId));
+```
+
+</CodeGroup>
+
+### Sorting and Pagination
+
+<CodeGroup>
+
+```typescript Prisma
+const users = await prisma.user.findMany({
+  orderBy: { createdAt: 'desc' },
+  skip: 10,
+  take: 20,
+});
+```
+
+```typescript Drizzle
+import { desc } from 'drizzle-orm';
+
+const users = await db.select()
+  .from(usersTable)
+  .orderBy(desc(usersTable.createdAt))
+  .offset(10)
+  .limit(20);
+```
+
+</CodeGroup>
+
+### Aggregations
+
+<CodeGroup>
+
+```typescript Prisma
+const result = await prisma.user.aggregate({
+  _count: true,
+  _avg: { age: true },
+  _sum: { age: true },
+});
+```
+
+```typescript Drizzle
+import { count, avg, sum } from 'drizzle-orm';
+
+const result = await db.select({
+  count: count(),
+  avgAge: avg(usersTable.age),
+  sumAge: sum(usersTable.age),
+}).from(usersTable);
+```
+
+</CodeGroup>
+
+### Transactions
+
+<CodeGroup>
+
+```typescript Prisma
+await prisma.$transaction(async (tx) => {
+  await tx.user.create({ data: { name: 'John' } });
+  await tx.post.create({ data: { title: 'Post' } });
+});
+```
+
+```typescript Drizzle
+await db.transaction(async (tx) => {
+  await tx.insert(usersTable).values({ name: 'John' });
+  await tx.insert(postsTable).values({ title: 'Post' });
+});
+```
+
+</CodeGroup>
+
+## Data Migration
+
+### Preserving Existing Data
+
+Your data stays in the database during migration. Only your application code changes.
+
+<Steps>
+
+<Step title="Introspect existing database">
+  ```bash
+  npx drizzle-kit introspect
+  ```
+  
+  This generates a Drizzle schema matching your current Prisma database structure.
+</Step>
+
+<Step title="Review generated schema">
+  Check `drizzle/schema.ts` and adjust as needed. The introspection tool maps:
+  - Table names
+  - Column types
+  - Constraints
+  - Indexes
+  - Foreign keys
+</Step>
+
+<Step title="Test queries">
+  Write equivalent Drizzle queries and verify they return the same data:
+  
+  ```typescript
+  // Test script
+  const prismaUsers = await prisma.user.findMany();
+  const drizzleUsers = await db.select().from(usersTable);
+  
+  console.log('Match:', JSON.stringify(prismaUsers) === JSON.stringify(drizzleUsers));
+  ```
+</Step>
+
+</Steps>
+
+### Handling Prisma-Specific Features
+
+#### @updatedAt
+
+Prisma's `@updatedAt` automatically updates timestamps. In Drizzle:
+
+```typescript
+import { timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('User', {
+  updatedAt: timestamp('updatedAt')
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+```
+
+#### @default(uuid())
+
+```typescript
+import { uuid } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('User', {
+  id: uuid('id').defaultRandom().primaryKey(),
+});
+```
+
+#### @default(cuid())
+
+Drizzle doesn't have built-in CUID. Use a library:
+
+```typescript
+import { text } from 'drizzle-orm/pg-core';
+import { createId } from '@paralleldrive/cuid2';
+
+export const users = pgTable('User', {
+  id: text('id').$defaultFn(() => createId()).primaryKey(),
+});
+```
+
+## Drizzle Kit vs Prisma Migrate
+
+| Feature | Prisma Migrate | Drizzle Kit |
+|---------|----------------|-------------|
+| Auto-generate migrations | Yes | Yes |
+| Push schema without migrations | `db push` | `drizzle-kit push` |
+| Migration history | `_prisma_migrations` table | `__drizzle_migrations` table |
+| Introspection | `prisma db pull` | `drizzle-kit introspect` |
+| Studio (GUI) | Prisma Studio | Drizzle Studio |
+
+### Migration Commands
+
+<CodeGroup>
+
+```bash Prisma
+# Generate migration
+prisma migrate dev --name add_users
+
+# Apply migrations
+prisma migrate deploy
+
+# Reset database
+prisma migrate reset
+```
+
+```bash Drizzle
+# Generate migration
+drizzle-kit generate
+
+# Apply migrations
+drizzle-kit migrate
+
+# Push schema (like db push)
+drizzle-kit push
+```
+
+</CodeGroup>
+
+## Common Pitfalls
+
+<Warning>
+**No automatic ID generation**: Unlike Prisma's `@default(autoincrement())`, Drizzle requires explicit specification:
+
+```typescript
+// Use serial() for auto-increment
+id: serial('id').primaryKey()
+
+// Or uuid()
+id: uuid('id').defaultRandom().primaryKey()
+```
+</Warning>
+
+<Warning>
+**Explicit table names**: Drizzle uses the first argument as table name:
+
+```typescript
+// This creates a table named "User" (matches Prisma)
+export const users = pgTable('User', { ... });
+
+// Variable name doesn't affect table name
+export const usersTable = pgTable('users', { ... });
+```
+</Warning>
+
+<Warning>
+**Relations are optional**: Foreign keys work without defining relations. Relations are only needed for the relational query API:
+
+```typescript
+// This works fine
+export const posts = pgTable('posts', {
+  userId: integer('userId').references(() => users.id),
+});
+
+// Relations only needed for db.query.posts.findMany({ with: ... })
+export const postsRelations = relations(posts, ({ one }) => ({ ... }));
+```
+</Warning>
+
+## Type Inference Differences
+
+Drizzle provides direct type inference without code generation:
+
+```typescript
+// Prisma: Generated in node_modules/.prisma/client
+type User = Prisma.User;
+
+// Drizzle: Inferred from schema
+import { users } from './schema';
+
+type User = typeof users.$inferSelect;
+type NewUser = typeof users.$inferInsert;
+```
+
+## Performance Comparison
+
+Drizzle typically performs better than Prisma because:
+
+1. **No query engine**: Direct database driver usage
+2. **Smaller bundle**: No Prisma engines to download
+3. **Prepared statements**: Built-in support reduces parsing overhead
+4. **Edge runtime**: Works in Cloudflare Workers, Vercel Edge
+
+Benchmark example (Next.js API route):
+
+```typescript
+// Prisma: ~150ms cold start
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+
+// Drizzle: ~50ms cold start
+import { drizzle } from 'drizzle-orm/neon-http';
+const db = drizzle({ connection: process.env.DATABASE_URL! });
+```
+
+## Complete Example: Before & After
+
+<CodeGroup>
+
+```typescript Prisma (before)
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+export async function getUsers(role: string) {
+  return await prisma.user.findMany({
+    where: { role },
+    include: {
+      posts: {
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+}
+
+export async function createUser(data: {
+  email: string;
+  name: string;
+  role: string;
+}) {
+  return await prisma.user.create({ data });
+}
+```
+
+```typescript Drizzle (after)
+import { drizzle } from 'drizzle-orm/neon-http';
+import { users } from './schema';
+import { eq, desc, asc } from 'drizzle-orm';
+
+const db = drizzle({ connection: process.env.DATABASE_URL! });
+
+export async function getUsers(role: string) {
+  return await db.query.users.findMany({
+    where: eq(users.role, role),
+    with: {
+      posts: {
+        orderBy: desc(posts.createdAt),
+        limit: 10,
+      },
+    },
+    orderBy: asc(users.name),
+  });
+}
+
+export async function createUser(data: {
+  email: string;
+  name: string;
+  role: string;
+}) {
+  const [user] = await db.insert(users)
+    .values(data)
+    .returning();
+  return user;
+}
+```
+
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Schema Design" icon="diagram-project" href="/essentials/schema">
+  Learn Drizzle schema syntax in depth
+</Card>
+
+<Card title="Query API" icon="code" href="/essentials/queries">
+  Master Drizzle's query builder
+</Card>
+
+<Card title="Best Practices" icon="star" href="/guides/best-practices">
+  Optimize your Drizzle implementation
+</Card>
+
+<Card title="Relational Queries" icon="link" href="/essentials/relational-queries">
+  Use the relational query API
+</Card>
+
+</CardGroup>

@@ -1,0 +1,381 @@
+---
+title: Constraints
+description: Define primary keys, foreign keys, unique constraints, and check constraints in Drizzle ORM.
+---
+
+Constraints ensure data integrity by enforcing rules on columns and tables. Drizzle supports primary keys, foreign keys, unique constraints, and check constraints.
+
+## Primary keys
+
+### Column-level primary key
+
+The simplest way to define a primary key is on a single column:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { pgTable, serial, uuid } from 'drizzle-orm/pg-core';
+
+    export const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+    });
+
+    // Or with UUID
+    export const sessions = pgTable('sessions', {
+      id: uuid('id').defaultRandom().primaryKey(),
+    });
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { mysqlTable, serial, int } from 'drizzle-orm/mysql-core';
+
+    export const users = mysqlTable('users', {
+      id: serial('id').primaryKey(),
+    });
+
+    // Or with regular int
+    export const products = mysqlTable('products', {
+      id: int('id').primaryKey(),
+    });
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { sqliteTable, integer } from 'drizzle-orm/sqlite-core';
+
+    export const users = sqliteTable('users', {
+      id: integer('id').primaryKey({ autoIncrement: true }),
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Composite primary key
+
+Define a primary key across multiple columns:
+
+<CodeGroup>
+```typescript PostgreSQL
+import { pgTable, integer, varchar, primaryKey } from 'drizzle-orm/pg-core';
+
+export const userRoles = pgTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] }),
+]);
+
+// With custom name
+export const userRoles = pgTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+}, (table) => [
+  primaryKey({ name: 'user_role_pk', columns: [table.userId, table.roleId] }),
+]);
+```
+
+```typescript MySQL
+import { mysqlTable, int, primaryKey } from 'drizzle-orm/mysql-core';
+
+export const userRoles = mysqlTable('user_roles', {
+  userId: int('user_id').notNull(),
+  roleId: int('role_id').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] }),
+]);
+```
+
+```typescript SQLite
+import { sqliteTable, integer, primaryKey } from 'drizzle-orm/sqlite-core';
+
+export const userRoles = sqliteTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] }),
+]);
+```
+</CodeGroup>
+
+## Foreign keys
+
+### Column-level foreign key
+
+Define a foreign key reference directly on a column:
+
+```typescript
+import { pgTable, serial, integer, varchar } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }),
+  authorId: integer('author_id').references(() => users.id),
+});
+```
+
+### Foreign key with actions
+
+Specify ON DELETE and ON UPDATE actions:
+
+```typescript
+import { pgTable, serial, integer } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  authorId: integer('author_id')
+    .references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+});
+```
+
+Available actions:
+- `'cascade'` - Delete/update related rows
+- `'restrict'` - Prevent delete/update if related rows exist
+- `'no action'` - Same as restrict (default)
+- `'set null'` - Set foreign key to NULL
+- `'set default'` - Set foreign key to default value
+
+### Table-level foreign key
+
+Define foreign keys in the table's extra config:
+
+```typescript
+import { pgTable, serial, integer, varchar, foreignKey } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }),
+  authorId: integer('author_id').notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id],
+  }).onDelete('cascade'),
+]);
+```
+
+### Composite foreign key
+
+Reference multiple columns:
+
+```typescript
+import { pgTable, integer, varchar, foreignKey } from 'drizzle-orm/pg-core';
+
+export const countries = pgTable('countries', {
+  id: integer('id').primaryKey(),
+  code: varchar('code', { length: 2 }).notNull(),
+});
+
+export const cities = pgTable('cities', {
+  id: integer('id').primaryKey(),
+  countryId: integer('country_id').notNull(),
+  countryCode: varchar('country_code', { length: 2 }).notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.countryId, table.countryCode],
+    foreignColumns: [countries.id, countries.code],
+  }),
+]);
+```
+
+### Named foreign key
+
+```typescript
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  authorId: integer('author_id').notNull(),
+}, (table) => [
+  foreignKey({
+    name: 'posts_author_fk',
+    columns: [table.authorId],
+    foreignColumns: [users.id],
+  }),
+]);
+```
+
+## Unique constraints
+
+### Column-level unique
+
+Mark a single column as unique:
+
+```typescript
+import { pgTable, serial, varchar } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  username: varchar('username', { length: 50 }).unique(),
+});
+```
+
+### Table-level unique constraint
+
+Define unique constraints on single or multiple columns:
+
+```typescript
+import { pgTable, serial, varchar, unique } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  username: varchar('username', { length: 50 }).notNull(),
+}, (table) => [
+  unique().on(table.email),
+  unique('username_unique').on(table.username),
+]);
+```
+
+### Composite unique constraint
+
+Enforce uniqueness across multiple columns:
+
+```typescript
+import { pgTable, serial, varchar, integer, unique } from 'drizzle-orm/pg-core';
+
+export const userProfiles = pgTable('user_profiles', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull(),
+  platform: varchar('platform', { length: 50 }).notNull(),
+  profileUrl: varchar('profile_url', { length: 255 }),
+}, (table) => [
+  unique('user_platform_unique').on(table.userId, table.platform),
+]);
+```
+
+### NULLS NOT DISTINCT (PostgreSQL)
+
+By default, PostgreSQL considers NULL values as distinct in unique constraints. Use `nullsNotDistinct()` to treat NULL values as equal:
+
+```typescript
+import { pgTable, serial, varchar, unique } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+  alternateEmail: varchar('alternate_email', { length: 255 }),
+}, (table) => [
+  unique().on(table.email).nullsNotDistinct(),
+]);
+```
+
+<Note>
+  `nullsNotDistinct()` is only available in PostgreSQL 15+
+</Note>
+
+## Check constraints
+
+Check constraints validate data based on a boolean expression:
+
+### Basic check constraint
+
+```typescript
+import { pgTable, serial, integer, check, sql } from 'drizzle-orm/pg-core';
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  price: integer('price').notNull(),
+  discount: integer('discount'),
+}, (table) => [
+  check('price_positive', sql`${table.price} > 0`),
+  check('discount_valid', sql`${table.discount} >= 0 AND ${table.discount} <= 100`),
+]);
+```
+
+### Multiple column check
+
+```typescript
+import { pgTable, serial, timestamp, check, sql } from 'drizzle-orm/pg-core';
+
+export const events = pgTable('events', {
+  id: serial('id').primaryKey(),
+  startDate: timestamp('start_date').notNull(),
+  endDate: timestamp('end_date').notNull(),
+}, (table) => [
+  check('valid_date_range', sql`${table.endDate} > ${table.startDate}`),
+]);
+```
+
+### Complex check constraint
+
+```typescript
+import { pgTable, serial, varchar, integer, check, sql } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+  phone: varchar('phone', { length: 20 }),
+  age: integer('age'),
+}, (table) => [
+  check('contact_required', sql`${table.email} IS NOT NULL OR ${table.phone} IS NOT NULL`),
+  check('adult_only', sql`${table.age} >= 18`),
+]);
+```
+
+<Warning>
+  Check constraints are evaluated for each row. Complex checks can impact performance on large tables.
+</Warning>
+
+## Complete example
+
+```typescript
+import { 
+  pgTable, 
+  serial, 
+  varchar, 
+  integer, 
+  timestamp,
+  boolean,
+  foreignKey,
+  unique,
+  check,
+  sql 
+} from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  username: varchar('username', { length: 50 }).notNull(),
+  age: integer('age'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  unique('username_unique').on(table.username),
+  check('adult_user', sql`${table.age} >= 18`),
+]);
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  authorId: integer('author_id').notNull(),
+  editorId: integer('editor_id'),
+  published: boolean('published').default(false),
+  views: integer('views').default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id],
+  }).onDelete('cascade'),
+  foreignKey({
+    columns: [table.editorId],
+    foreignColumns: [users.id],
+  }).onDelete('set null'),
+  check('positive_views', sql`${table.views} >= 0`),
+]);
+
+export const postTags = pgTable('post_tags', {
+  postId: integer('post_id').notNull().references(() => posts.id),
+  tagId: integer('tag_id').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.postId, table.tagId] }),
+]);
+```

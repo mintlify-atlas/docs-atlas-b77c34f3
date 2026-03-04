@@ -1,0 +1,496 @@
+---
+title: MySQL Database
+description: API reference for MySQL database connection and query methods in Drizzle ORM
+---
+
+The `MySqlDatabase` class is the core interface for interacting with a MySQL database. It provides methods for executing queries, managing transactions, and working with Common Table Expressions (CTEs).
+
+## Database Methods
+
+### select()
+
+Creates a SELECT query. Call with no arguments to select all columns, or pass a selection object to specify columns.
+
+```typescript
+select(): MySqlSelectBuilder
+select<TSelection>(fields: TSelection): MySqlSelectBuilder<TSelection>
+```
+
+<ParamField path="fields" type="object" optional>
+  Selection object specifying which columns to select. Each key is the result field name, each value is a column or expression.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Select all columns
+const allCars = await db.select().from(cars);
+
+// Select specific columns
+const carsIdsAndBrands = await db.select({
+  id: cars.id,
+  brand: cars.brand
+}).from(cars);
+
+// Select with expressions
+const carsWithLowerNames = await db.select({
+  id: cars.id,
+  lowerBrand: sql<string>`lower(${cars.brand})`
+}).from(cars);
+```
+
+---
+
+### selectDistinct()
+
+Creates a SELECT DISTINCT query to return only unique rows.
+
+```typescript
+selectDistinct(): MySqlSelectBuilder
+selectDistinct<TSelection>(fields: TSelection): MySqlSelectBuilder<TSelection>
+```
+
+<ParamField path="fields" type="object" optional>
+  Selection object specifying which columns to select for uniqueness.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Select all unique rows
+await db.selectDistinct()
+  .from(cars)
+  .orderBy(cars.id, cars.brand, cars.color);
+
+// Select unique brands
+await db.selectDistinct({ brand: cars.brand })
+  .from(cars)
+  .orderBy(cars.brand);
+```
+
+---
+
+### insert()
+
+Creates an INSERT query to add new rows to a table.
+
+```typescript
+insert<TTable extends MySqlTable>(
+  table: TTable
+): MySqlInsertBuilder<TTable>
+```
+
+<ParamField path="table" type="MySqlTable" required>
+  The table to insert into.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Insert one row
+await db.insert(cars).values({ brand: 'BMW' });
+
+// Insert multiple rows
+await db.insert(cars).values([
+  { brand: 'BMW' },
+  { brand: 'Porsche' }
+]);
+
+// Insert with on duplicate key update
+await db.insert(users)
+  .values({ id: 1, name: 'John' })
+  .onDuplicateKeyUpdate({ set: { name: 'John Updated' } });
+```
+
+---
+
+### update()
+
+Creates an UPDATE query to modify existing rows.
+
+```typescript
+update<TTable extends MySqlTable>(
+  table: TTable
+): MySqlUpdateBuilder<TTable>
+```
+
+<ParamField path="table" type="MySqlTable" required>
+  The table to update.
+</ParamField>
+
+<Tip>
+Always use a `.where()` clause with updates unless you intend to update all rows.
+</Tip>
+
+#### Examples
+
+```typescript
+// Update all rows
+await db.update(cars).set({ color: 'red' });
+
+// Update with filters
+await db.update(cars)
+  .set({ color: 'red' })
+  .where(eq(cars.brand, 'BMW'));
+
+// Update with expressions
+await db.update(users)
+  .set({ loginCount: sql`${users.loginCount} + 1` })
+  .where(eq(users.id, 1));
+```
+
+---
+
+### delete()
+
+Creates a DELETE query to remove rows from a table.
+
+```typescript
+delete<TTable extends MySqlTable>(
+  table: TTable
+): MySqlDeleteBase<TTable>
+```
+
+<ParamField path="table" type="MySqlTable" required>
+  The table to delete from.
+</ParamField>
+
+<Warning>
+Calling delete without a `.where()` clause will delete all rows in the table.
+</Warning>
+
+#### Examples
+
+```typescript
+// Delete all rows
+await db.delete(cars);
+
+// Delete with filters
+await db.delete(cars).where(eq(cars.color, 'green'));
+
+// Delete with limit
+await db.delete(cars)
+  .where(eq(cars.brand, 'BMW'))
+  .limit(10);
+```
+
+---
+
+### $with()
+
+Defines a Common Table Expression (CTE) for use in queries.
+
+```typescript
+$with(alias: string): { as: (query) => WithSubquery }
+```
+
+<ParamField path="alias" type="string" required>
+  The alias name for the CTE.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Create and use a CTE
+const sq = db.$with('sq').as(
+  db.select().from(users).where(eq(users.id, 42))
+);
+
+const result = await db.with(sq).select().from(sq);
+
+// CTE with aliased SQL expressions
+const sq = db.$with('sq').as(
+  db.select({
+    name: sql<string>`upper(${users.name})`.as('name')
+  }).from(users)
+);
+
+const result = await db.with(sq)
+  .select({ name: sq.name })
+  .from(sq);
+```
+
+---
+
+### with()
+
+Incorporates previously defined CTEs into the main query.
+
+```typescript
+with(...queries: WithSubquery[]): {
+  select: () => MySqlSelectBuilder,
+  selectDistinct: () => MySqlSelectBuilder,
+  update: <TTable>(table: TTable) => MySqlUpdateBuilder<TTable>,
+  delete: <TTable>(table: TTable) => MySqlDeleteBase<TTable>
+}
+```
+
+<ParamField path="queries" type="WithSubquery[]" required>
+  One or more CTEs to incorporate.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Single CTE
+const sq = db.$with('sq').as(db.select().from(users));
+const result = await db.with(sq).select().from(sq);
+
+// Multiple CTEs
+const sq1 = db.$with('sq1').as(db.select().from(users));
+const sq2 = db.$with('sq2').as(db.select().from(posts));
+
+const result = await db.with(sq1, sq2)
+  .select()
+  .from(sq1)
+  .leftJoin(sq2, eq(sq1.id, sq2.userId));
+```
+
+---
+
+### $count()
+
+Creates a count query builder for efficient row counting.
+
+```typescript
+$count(
+  source: MySqlTable | MySqlViewBase | SQL,
+  filters?: SQL
+): MySqlCountBuilder
+```
+
+<ParamField path="source" type="MySqlTable | MySqlViewBase | SQL" required>
+  The table, view, or SQL expression to count rows from.
+</ParamField>
+
+<ParamField path="filters" type="SQL" optional>
+  Optional WHERE clause filters.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Count all rows
+const totalUsers = await db.$count(users);
+
+// Count with filters
+const activeUsers = await db.$count(
+  users,
+  eq(users.status, 'active')
+);
+```
+
+---
+
+### execute()
+
+Executes raw SQL queries.
+
+```typescript
+execute<T = ResultSetHeader>(
+  query: SQLWrapper | string
+): Promise<T>
+```
+
+<ParamField path="query" type="SQLWrapper | string" required>
+  The SQL query to execute. Can be a string or a SQL template tagged expression.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Execute raw SQL string
+await db.execute('SELECT * FROM users');
+
+// Execute SQL template
+await db.execute(sql`SELECT * FROM users WHERE id = ${userId}`);
+
+// Get result metadata
+const result = await db.execute<ResultSetHeader>(
+  sql`INSERT INTO users (name) VALUES ('John')`
+);
+console.log(result.insertId);
+```
+
+---
+
+### transaction()
+
+Executes a function within a database transaction.
+
+```typescript
+transaction<T>(
+  transaction: (tx: MySqlTransaction, config?: MySqlTransactionConfig) => Promise<T>,
+  config?: MySqlTransactionConfig
+): Promise<T>
+```
+
+<ParamField path="transaction" type="function" required>
+  Callback function that receives a transaction object. All database operations within this function will be part of the transaction.
+</ParamField>
+
+<ParamField path="config" type="MySqlTransactionConfig" optional>
+  Transaction configuration options like isolation level.
+</ParamField>
+
+#### Examples
+
+```typescript
+// Basic transaction
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  await tx.insert(posts).values({ title: 'Hello' });
+});
+
+// Transaction with isolation level
+await db.transaction(async (tx) => {
+  const user = await tx.select().from(users).where(eq(users.id, 1));
+  await tx.update(users).set({ balance: user[0].balance - 100 });
+}, {
+  isolationLevel: 'serializable'
+});
+
+// Transaction with error handling
+try {
+  await db.transaction(async (tx) => {
+    await tx.insert(users).values({ name: 'John' });
+    throw new Error('Rollback!');
+  });
+} catch (error) {
+  // Transaction automatically rolled back
+}
+```
+
+---
+
+## Relational Queries
+
+### query
+
+Access relational query API when a schema is provided.
+
+```typescript
+query: {
+  [TableName]: RelationalQueryBuilder
+}
+```
+
+<Note>
+The `query` property is only available when you pass a schema to the database constructor.
+</Note>
+
+#### Examples
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import * as schema from './schema';
+
+const db = drizzle(pool, { schema });
+
+// Relational query with nested relations
+const result = await db.query.users.findMany({
+  with: {
+    posts: true,
+    profile: true
+  }
+});
+
+// Relational query with filters
+const result = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, 1),
+  with: {
+    posts: {
+      where: (posts, { eq }) => eq(posts.published, true)
+    }
+  }
+});
+```
+
+---
+
+## Read Replicas
+
+### withReplicas()
+
+Configures read replicas for read/write splitting.
+
+```typescript
+withReplicas<Q extends MySqlDatabase>(
+  primary: Q,
+  replicas: [Q, ...Q[]],
+  getReplica?: (replicas: Q[]) => Q
+): MySQLWithReplicas<Q>
+```
+
+<ParamField path="primary" type="MySqlDatabase" required>
+  The primary (write) database connection.
+</ParamField>
+
+<ParamField path="replicas" type="MySqlDatabase[]" required>
+  Array of replica (read) database connections. Must have at least one replica.
+</ParamField>
+
+<ParamField path="getReplica" type="function" optional>
+  Custom function to select which replica to use. Defaults to random selection.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import { withReplicas } from 'drizzle-orm/mysql-core';
+
+const primaryDb = drizzle(primaryPool);
+const replica1 = drizzle(replica1Pool);
+const replica2 = drizzle(replica2Pool);
+
+const db = withReplicas(primaryDb, [replica1, replica2]);
+
+// Read queries go to replicas
+const users = await db.select().from(users);
+
+// Write queries go to primary
+await db.insert(users).values({ name: 'John' });
+
+// Explicitly use primary
+await db.$primary.select().from(users);
+
+// Custom replica selection (e.g., round-robin)
+let replicaIndex = 0;
+const db = withReplicas(
+  primaryDb,
+  [replica1, replica2],
+  (replicas) => replicas[replicaIndex++ % replicas.length]
+);
+```
+
+---
+
+## Type Helpers
+
+### MySqlDatabase
+
+```typescript
+class MySqlDatabase<
+  TQueryResult extends MySqlQueryResultHKT,
+  TPreparedQueryHKT extends PreparedQueryHKTBase,
+  TFullSchema extends Record<string, unknown> = {},
+  TSchema extends TablesRelationalConfig = ExtractTablesWithRelations<TFullSchema>
+>
+```
+
+<ResponseField name="TQueryResult" type="MySqlQueryResultHKT">
+  The query result type for the specific MySQL driver being used.
+</ResponseField>
+
+<ResponseField name="TPreparedQueryHKT" type="PreparedQueryHKTBase">
+  The prepared query type for the specific MySQL driver.
+</ResponseField>
+
+<ResponseField name="TFullSchema" type="Record<string, unknown>">
+  The full schema definition including all tables and relations.
+</ResponseField>
+
+<ResponseField name="TSchema" type="TablesRelationalConfig">
+  Extracted relational configuration from the full schema.
+</ResponseField>

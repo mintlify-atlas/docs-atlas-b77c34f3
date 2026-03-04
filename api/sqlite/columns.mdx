@@ -1,0 +1,463 @@
+---
+title: SQLite Columns
+description: Column types and builders for SQLite tables
+---
+
+## Column Types
+
+SQLite uses a dynamic type system with type affinity. Drizzle provides typed column builders for common use cases.
+
+## integer()
+
+Defines an integer column. Supports multiple modes for different data types.
+
+### Signature
+
+```typescript
+function integer<TMode extends 'number' | 'timestamp' | 'timestamp_ms' | 'boolean'>(
+  config?: { mode: TMode }
+): SQLiteIntegerBuilder | SQLiteTimestampBuilder | SQLiteBooleanBuilder
+```
+
+### Basic Integer
+
+<CodeGroup>
+```typescript Number mode (default)
+import { integer } from 'drizzle-orm/sqlite-core';
+
+const table = sqliteTable('table', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  age: integer('age').notNull(),
+  score: integer('score').default(0),
+});
+```
+
+```typescript With constraints
+const table = sqliteTable('table', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+  count: integer('count').notNull().default(0),
+});
+```
+</CodeGroup>
+
+### Timestamp Mode
+
+Stores dates as Unix timestamps (seconds since epoch).
+
+```typescript
+const table = sqliteTable('table', {
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$onUpdate(() => new Date()),
+});
+
+// Stored as: 1703073600 (seconds)
+// JavaScript: new Date()
+```
+
+### Timestamp Milliseconds Mode
+
+Stores dates as Unix timestamps in milliseconds.
+
+```typescript
+const table = sqliteTable('table', {
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+// Stored as: 1703073600000 (milliseconds)
+// JavaScript: new Date()
+```
+
+### Boolean Mode
+
+Stores booleans as integers (0 or 1).
+
+```typescript
+const table = sqliteTable('table', {
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(false),
+  isVerified: integer('is_verified', { mode: 'boolean' }),
+});
+
+// Stored as: 0 or 1
+// JavaScript: true or false
+```
+
+### Primary Key Options
+
+```typescript
+interface PrimaryKeyConfig {
+  autoIncrement?: boolean;
+  onConflict?: 'rollback' | 'abort' | 'fail' | 'ignore' | 'replace';
+}
+```
+
+<CodeGroup>
+```typescript Auto-increment
+id: integer('id').primaryKey({ autoIncrement: true })
+```
+
+```typescript With conflict resolution
+id: integer('id').primaryKey({ onConflict: 'replace' })
+```
+</CodeGroup>
+
+## text()
+
+Defines a text column. Supports plain text, enums, and JSON.
+
+### Signature
+
+```typescript
+function text<TEnum extends readonly string[], TMode extends 'text' | 'json'>(
+  config?: {
+    mode?: TMode;
+    length?: number;
+    enum?: TEnum;
+  }
+): SQLiteTextBuilder | SQLiteTextJsonBuilder
+```
+
+### Basic Text
+
+<CodeGroup>
+```typescript Simple text
+import { text } from 'drizzle-orm/sqlite-core';
+
+const table = sqliteTable('table', {
+  name: text('name').notNull(),
+  description: text('description'),
+  email: text('email').notNull().unique(),
+});
+```
+
+```typescript With length
+const table = sqliteTable('table', {
+  code: text('code', { length: 10 }),
+  username: text('username', { length: 50 }).notNull(),
+});
+```
+</CodeGroup>
+
+### Enum Text
+
+Enforces type safety with predefined values.
+
+```typescript
+const table = sqliteTable('table', {
+  role: text('role', { enum: ['admin', 'user', 'guest'] as const }).notNull(),
+  status: text('status', { enum: ['active', 'inactive', 'pending'] as const }),
+});
+
+// Type-safe: only accepts 'admin', 'user', or 'guest'
+await db.insert(table).values({ role: 'admin' });
+```
+
+### JSON Mode
+
+Stores JSON data as text with automatic serialization.
+
+```typescript
+const table = sqliteTable('table', {
+  metadata: text('metadata', { mode: 'json' }),
+  settings: text('settings', { mode: 'json' }).$type<{ theme: string; lang: string }>(),
+});
+
+// Automatic JSON serialization
+await db.insert(table).values({
+  metadata: { key: 'value' },
+  settings: { theme: 'dark', lang: 'en' },
+});
+
+// Automatic JSON deserialization
+const result = await db.select().from(table);
+console.log(result[0].metadata.key); // 'value'
+```
+
+## real()
+
+Defines a real (floating-point) column.
+
+```typescript
+function real(): SQLiteRealBuilder
+```
+
+<CodeGroup>
+```typescript Basic usage
+import { real } from 'drizzle-orm/sqlite-core';
+
+const table = sqliteTable('table', {
+  price: real('price').notNull(),
+  rating: real('rating').default(0.0),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+});
+```
+
+```typescript With constraints
+const table = sqliteTable('table', {
+  temperature: real('temperature').notNull(),
+  humidity: real('humidity').notNull().default(50.0),
+});
+```
+</CodeGroup>
+
+## numeric()
+
+Defines a numeric column. Useful for precise decimal values.
+
+### Signature
+
+```typescript
+function numeric<TMode extends 'string' | 'number' | 'bigint'>(
+  config?: { mode: TMode }
+): SQLiteNumericBuilder | SQLiteNumericNumberBuilder | SQLiteNumericBigIntBuilder
+```
+
+### String Mode (Default)
+
+Preserves precision as string.
+
+```typescript
+const table = sqliteTable('table', {
+  amount: numeric('amount'),
+  balance: numeric('balance').notNull(),
+});
+
+// Stored and retrieved as string
+// JavaScript: '123.45'
+```
+
+### Number Mode
+
+Converts to JavaScript number.
+
+```typescript
+const table = sqliteTable('table', {
+  price: numeric('price', { mode: 'number' }),
+});
+
+// JavaScript: 123.45
+```
+
+### BigInt Mode
+
+Converts to JavaScript bigint.
+
+```typescript
+const table = sqliteTable('table', {
+  largeValue: numeric('large_value', { mode: 'bigint' }),
+});
+
+// JavaScript: 123n
+```
+
+## blob()
+
+Defines a blob (binary) column. Supports buffer, JSON, and bigint modes.
+
+### Signature
+
+```typescript
+function blob<TMode extends 'buffer' | 'json' | 'bigint'>(
+  config?: { mode: TMode }
+): SQLiteBlobBufferBuilder | SQLiteBlobJsonBuilder | SQLiteBigIntBuilder
+```
+
+### Buffer Mode (Default)
+
+Stores binary data.
+
+```typescript
+import { blob } from 'drizzle-orm/sqlite-core';
+
+const table = sqliteTable('table', {
+  avatar: blob('avatar', { mode: 'buffer' }),
+  file: blob('file', { mode: 'buffer' }).notNull(),
+});
+
+// JavaScript: Buffer
+await db.insert(table).values({
+  avatar: Buffer.from('binary data'),
+});
+```
+
+### JSON Mode
+
+Stores JSON as binary. Note: Use `text('...', { mode: 'json' })` instead for JSON functions support.
+
+```typescript
+const table = sqliteTable('table', {
+  data: blob('data', { mode: 'json' }),
+});
+
+// Automatic JSON serialization to binary
+await db.insert(table).values({
+  data: { key: 'value' },
+});
+```
+
+<Warning>
+SQLite's JSON functions don't work with blob columns. Use `text('...', { mode: 'json' })` if you need JSON functions.
+</Warning>
+
+### BigInt Mode
+
+Stores bigint values as binary.
+
+```typescript
+const table = sqliteTable('table', {
+  largeNumber: blob('large_number', { mode: 'bigint' }),
+});
+
+// JavaScript: bigint
+await db.insert(table).values({
+  largeNumber: 12345678901234567890n,
+});
+```
+
+## Column Modifiers
+
+All column builders support these chainable methods:
+
+### notNull()
+
+Makes the column non-nullable.
+
+```typescript
+name: text('name').notNull()
+```
+
+### default()
+
+Sets a default value.
+
+```typescript
+createdAt: integer('created_at', { mode: 'timestamp' })
+  .notNull()
+  .default(sql`(unixepoch())`)
+```
+
+### primaryKey()
+
+Marks the column as the primary key.
+
+```typescript
+id: integer('id').primaryKey({ autoIncrement: true })
+```
+
+### unique()
+
+Adds a unique constraint.
+
+```typescript
+email: text('email').notNull().unique()
+```
+
+### references()
+
+Defines a foreign key reference.
+
+```typescript
+userId: integer('user_id')
+  .notNull()
+  .references(() => users.id, { onDelete: 'cascade' })
+```
+
+### $type()
+
+Overrides the TypeScript type.
+
+```typescript
+metadata: text('metadata', { mode: 'json' })
+  .$type<{ version: number; flags: string[] }>()
+```
+
+### $default()
+
+Sets a runtime default value function.
+
+```typescript
+id: text('id').$default(() => crypto.randomUUID())
+```
+
+### $onUpdate()
+
+Sets a function to run on every update.
+
+```typescript
+updatedAt: integer('updated_at', { mode: 'timestamp' })
+  .$onUpdate(() => new Date())
+```
+
+### $onUpdateFn()
+
+Sets a SQL expression to run on update.
+
+```typescript
+updatedAt: integer('updated_at', { mode: 'timestamp' })
+  .$onUpdateFn(() => sql`(unixepoch())`)
+```
+
+## Generated Columns
+
+SQLite supports generated columns (virtual and stored).
+
+<CodeGroup>
+```typescript Virtual generated
+const table = sqliteTable('table', {
+  price: real('price').notNull(),
+  quantity: integer('quantity').notNull(),
+  total: real('total').generatedAlwaysAs(
+    sql`${price} * ${quantity}`,
+    { mode: 'virtual' }
+  ),
+});
+```
+
+```typescript Stored generated
+const table = sqliteTable('table', {
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+  fullName: text('full_name').generatedAlwaysAs(
+    sql`${firstName} || ' ' || ${lastName}`,
+    { mode: 'stored' }
+  ),
+});
+```
+</CodeGroup>
+
+## Type Inference
+
+Drizzle automatically infers TypeScript types from column definitions:
+
+```typescript
+const users = sqliteTable('users', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  role: text('role', { enum: ['admin', 'user'] as const }).notNull(),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+// Inferred types:
+type User = typeof users.$inferSelect;
+// {
+//   id: number;
+//   name: string;
+//   email: string;
+//   role: 'admin' | 'user';
+//   isActive: boolean | null;
+//   createdAt: Date;
+// }
+
+type NewUser = typeof users.$inferInsert;
+// {
+//   id?: number;
+//   name: string;
+//   email: string;
+//   role: 'admin' | 'user';
+//   isActive?: boolean | null;
+//   createdAt: Date;
+// }
+```

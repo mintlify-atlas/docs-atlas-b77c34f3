@@ -1,0 +1,408 @@
+---
+title: SQLite Utilities
+description: Utility functions and helpers for SQLite schema and queries
+---
+
+## Schema Utilities
+
+### getTableConfig()
+
+Extracts the complete configuration of a SQLite table including columns, indexes, foreign keys, checks, primary keys, and unique constraints.
+
+```typescript
+function getTableConfig<TTable extends SQLiteTable>(
+  table: TTable
+): {
+  columns: SQLiteColumn[];
+  indexes: Index[];
+  foreignKeys: ForeignKey[];
+  checks: Check[];
+  primaryKeys: PrimaryKey[];
+  uniqueConstraints: UniqueConstraint[];
+  name: string;
+}
+```
+
+<CodeGroup>
+```typescript Example usage
+import { getTableConfig } from 'drizzle-orm/sqlite-core';
+
+const config = getTableConfig(users);
+
+console.log('Table name:', config.name);
+console.log('Columns:', config.columns.map(c => c.name));
+console.log('Indexes:', config.indexes.map(i => i.config.name));
+console.log('Foreign keys:', config.foreignKeys.length);
+```
+
+```typescript Inspect columns
+const config = getTableConfig(users);
+
+config.columns.forEach(column => {
+  console.log(`Column: ${column.name}`);
+  console.log(`  Type: ${column.getSQLType()}`);
+  console.log(`  Nullable: ${!column.notNull}`);
+  console.log(`  Primary: ${column.primary}`);
+});
+```
+</CodeGroup>
+
+### getViewConfig()
+
+Extracts the configuration of a SQLite view.
+
+```typescript
+function getViewConfig<
+  TName extends string,
+  TExisting extends boolean
+>(
+  view: SQLiteView<TName, TExisting>
+): ViewConfig
+```
+
+```typescript
+import { getViewConfig } from 'drizzle-orm/sqlite-core';
+
+const config = getViewConfig(activeUsersView);
+console.log('View name:', config.name);
+console.log('Query:', config.query);
+```
+
+## Column Builders
+
+### getSQLiteColumnBuilders()
+
+Returns an object containing all SQLite column builder functions. Used internally by the table builder when using function syntax.
+
+```typescript
+function getSQLiteColumnBuilders(): SQLiteColumnBuilders
+
+interface SQLiteColumnBuilders {
+  integer: typeof integer;
+  text: typeof text;
+  real: typeof real;
+  numeric: typeof numeric;
+  blob: typeof blob;
+}
+```
+
+```typescript
+import { getSQLiteColumnBuilders } from 'drizzle-orm/sqlite-core';
+
+const builders = getSQLiteColumnBuilders();
+
+// Equivalent to using individual imports
+const id = builders.integer('id').primaryKey();
+const name = builders.text('name').notNull();
+```
+
+## Conflict Resolution
+
+### OnConflict Type
+
+Defines SQLite's conflict resolution strategies.
+
+```typescript
+type OnConflict = 'rollback' | 'abort' | 'fail' | 'ignore' | 'replace';
+```
+
+<ParamField path="rollback" type="string">
+  Aborts the current SQL statement and rolls back the transaction
+</ParamField>
+
+<ParamField path="abort" type="string">
+  Aborts the current SQL statement (default if not specified)
+</ParamField>
+
+<ParamField path="fail" type="string">
+  Aborts the current SQL statement but does not back out prior changes
+</ParamField>
+
+<ParamField path="ignore" type="string">
+  Skips the row that contains the constraint violation
+</ParamField>
+
+<ParamField path="replace" type="string">
+  Deletes pre-existing rows that cause the constraint violation
+</ParamField>
+
+<CodeGroup>
+```typescript Primary key conflict
+const table = sqliteTable('table', {
+  id: integer('id').primaryKey({ onConflict: 'replace' }),
+  value: text('value'),
+});
+```
+
+```typescript Unique constraint conflict
+const table = sqliteTable('table', {
+  email: text('email').unique({ onConflict: 'ignore' }),
+});
+```
+</CodeGroup>
+
+## Foreign Key Actions
+
+### UpdateDeleteAction Type
+
+Defines actions for foreign key constraints on UPDATE and DELETE operations.
+
+```typescript
+type UpdateDeleteAction = 
+  | 'cascade' 
+  | 'restrict' 
+  | 'no action' 
+  | 'set null' 
+  | 'set default';
+```
+
+<ParamField path="cascade" type="string">
+  Propagate the change (update/delete) to all referencing rows
+</ParamField>
+
+<ParamField path="restrict" type="string">
+  Prevent the change if any referencing rows exist
+</ParamField>
+
+<ParamField path="no action" type="string">
+  No action (SQLite default, defers check until end of transaction)
+</ParamField>
+
+<ParamField path="set null" type="string">
+  Set the foreign key column to NULL in referencing rows
+</ParamField>
+
+<ParamField path="set default" type="string">
+  Set the foreign key column to its default value in referencing rows
+</ParamField>
+
+<CodeGroup>
+```typescript Cascade delete
+export const posts = sqliteTable('posts', {
+  id: integer('id').primaryKey(),
+  authorId: integer('author_id').references(() => users.id, {
+    onDelete: 'cascade',  // Delete posts when user is deleted
+  }),
+});
+```
+
+```typescript Set null on delete
+export const posts = sqliteTable('posts', {
+  id: integer('id').primaryKey(),
+  editorId: integer('editor_id').references(() => users.id, {
+    onDelete: 'set null',  // Set editor to null when user is deleted
+  }),
+});
+```
+
+```typescript Restrict updates
+export const orderItems = sqliteTable('order_items', {
+  orderId: integer('order_id').references(() => orders.id, {
+    onUpdate: 'restrict',  // Prevent order ID changes if items exist
+  }),
+});
+```
+</CodeGroup>
+
+## Helper Functions
+
+### extractUsedTable()
+
+Extracts the table names used in a query expression. Useful for dependency analysis.
+
+```typescript
+function extractUsedTable(
+  table: SQLiteTable | Subquery | SQLiteViewBase | SQL
+): string[]
+```
+
+```typescript
+import { extractUsedTable } from 'drizzle-orm/sqlite-core';
+
+const tables = extractUsedTable(
+  sql`SELECT * FROM ${users} WHERE id IN (SELECT user_id FROM ${posts})`
+);
+console.log(tables); // ['users', 'posts']
+```
+
+## Type Utilities
+
+### AnySQLiteTable
+
+A utility type representing any SQLite table with optional partial configuration.
+
+```typescript
+type AnySQLiteTable<TPartial extends Partial<TableConfig> = {}> = 
+  SQLiteTable<UpdateTableConfig<TableConfig, TPartial>>
+```
+
+```typescript
+function processTable(table: AnySQLiteTable) {
+  const config = getTableConfig(table);
+  // ...
+}
+```
+
+### SQLiteTableWithColumns
+
+A utility type that combines a table with its column accessors.
+
+```typescript
+type SQLiteTableWithColumns<T extends TableConfig> = 
+  SQLiteTable<T> & {
+    [Key in keyof T['columns']]: T['columns'][Key];
+  }
+```
+
+```typescript
+const users: SQLiteTableWithColumns<typeof usersConfig> = sqliteTable(...);
+
+// Access columns directly
+console.log(users.id.name);
+console.log(users.email.notNull);
+```
+
+## Alias Utilities
+
+Create table aliases for self-joins and complex queries.
+
+```typescript
+import { alias } from 'drizzle-orm/sqlite-core';
+
+const users = sqliteTable('users', {
+  id: integer('id').primaryKey(),
+  name: text('name'),
+  managerId: integer('manager_id'),
+});
+
+const managers = alias(users, 'managers');
+
+const result = await db
+  .select({
+    employeeName: users.name,
+    managerName: managers.name,
+  })
+  .from(users)
+  .leftJoin(managers, eq(users.managerId, managers.id));
+```
+
+## SQL Template Helpers
+
+SQLite-specific SQL template utilities.
+
+### sql Template Tag
+
+Create raw SQL expressions.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// In column definitions
+const table = sqliteTable('table', {
+  createdAt: integer('created_at')
+    .default(sql`(unixepoch())`),
+  upperName: text('upper_name')
+    .generatedAlwaysAs(sql`upper(name)`),
+});
+
+// In queries
+const result = await db
+  .select({
+    id: users.id,
+    daysSinceCreated: sql<number>`(unixepoch() - ${users.createdAt}) / 86400`,
+  })
+  .from(users);
+```
+
+### Common SQLite Functions
+
+<CodeGroup>
+```typescript Date/Time functions
+import { sql } from 'drizzle-orm';
+
+// Current timestamp (seconds)
+sql`(unixepoch())`
+
+// Current timestamp (milliseconds)
+sql`(cast((julianday('now') - 2440587.5)*86400000 as integer))`
+
+// Date formatting
+sql`date(${column}, 'unixepoch')`
+sql`datetime(${column}, 'unixepoch')`
+```
+
+```typescript String functions
+// Concatenation
+sql`${users.firstName} || ' ' || ${users.lastName}`
+
+// Upper/Lower case
+sql`upper(${users.name})`
+sql`lower(${users.email})`
+
+// Substring
+sql`substr(${users.name}, 1, 10)`
+
+// Length
+sql`length(${users.name})`
+```
+
+```typescript JSON functions
+// Extract JSON field
+sql`json_extract(${column}, '$.field')`
+
+// JSON array length
+sql`json_array_length(${column})`
+
+// JSON validation
+sql`json_valid(${column})`
+```
+
+```typescript Aggregate functions
+import { count, sum, avg, min, max } from 'drizzle-orm';
+
+const stats = await db
+  .select({
+    total: count(),
+    totalSales: sum(orders.amount),
+    avgSale: avg(orders.amount),
+    minSale: min(orders.amount),
+    maxSale: max(orders.amount),
+  })
+  .from(orders);
+```
+</CodeGroup>
+
+## Placeholder
+
+Create named placeholders for prepared statements.
+
+```typescript
+import { placeholder } from 'drizzle-orm';
+
+const prepared = db
+  .select()
+  .from(users)
+  .where(and(
+    eq(users.role, placeholder('role')),
+    gte(users.age, placeholder('minAge'))
+  ))
+  .prepare();
+
+const admins = await prepared.all({ role: 'admin', minAge: 21 });
+const moderators = await prepared.all({ role: 'moderator', minAge: 18 });
+```
+
+## InlineForeignKeys Symbol
+
+Internal symbol used to access inline foreign key definitions.
+
+```typescript
+const InlineForeignKeys = Symbol.for('drizzle:SQLiteInlineForeignKeys');
+```
+
+```typescript
+import { SQLiteTable } from 'drizzle-orm/sqlite-core';
+
+const foreignKeys = users[SQLiteTable.Symbol.InlineForeignKeys];
+console.log('Foreign keys:', foreignKeys);
+```

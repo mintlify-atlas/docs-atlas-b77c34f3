@@ -1,0 +1,657 @@
+---
+title: Performance Optimization
+description: Best practices and techniques for optimizing Drizzle ORM queries and application performance
+---
+
+## Overview
+
+Drizzle is designed for performance, but understanding how to optimize your queries and database interactions is crucial for production applications. This guide covers practical techniques to maximize performance.
+
+## Query Optimization
+
+### Select Only Required Columns
+
+Fetch only the data you need:
+
+```typescript
+// ✗ BAD: Fetches all columns
+const users = await db.select().from(users);
+
+// ✓ GOOD: Fetches only required columns
+const users = await db.select({
+  id: users.id,
+  name: users.name,
+}).from(users);
+```
+
+<Tip>
+Selecting fewer columns reduces network transfer time and memory usage. This is especially important for tables with large text or binary columns.
+</Tip>
+
+### Use Indexes Effectively
+
+Create indexes for frequently queried columns:
+
+```typescript
+import { pgTable, serial, text, index } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull(),
+  username: text('username').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  emailIdx: index('email_idx').on(table.email),
+  usernameIdx: index('username_idx').on(table.username),
+  createdAtIdx: index('created_at_idx').on(table.createdAt),
+}));
+```
+
+### Compound Indexes
+
+Create multi-column indexes for common query patterns:
+
+```typescript
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull(),
+  status: text('status').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+}, (table) => ({
+  // Efficient for queries filtering by userId and status
+  userStatusIdx: index('user_status_idx').on(table.userId, table.status),
+  // Efficient for sorting by creation date within user
+  userDateIdx: index('user_date_idx').on(table.userId, table.createdAt),
+}));
+
+// This query can use the compound index:
+const userPosts = await db
+  .select()
+  .from(posts)
+  .where(
+    and(
+      eq(posts.userId, 123),
+      eq(posts.status, 'published')
+    )
+  );
+```
+
+## Prepared Statements
+
+### Reuse Prepared Statements
+
+Prepare statements once, execute many times:
+
+```typescript
+// Prepare once at application startup
+const getUserById = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Reuse in request handlers
+app.get('/users/:id', async (req, res) => {
+  const user = await getUserById.execute({ id: req.params.id });
+  res.json(user);
+});
+```
+
+<Note>
+Prepared statements reduce query planning time by 30-60% for repeated queries.
+</Note>
+
+### Batch Operations with Prepared Statements
+
+```typescript
+const insertUser = db
+  .insert(users)
+  .values({
+    name: placeholder('name'),
+    email: placeholder('email'),
+  })
+  .prepare('insert_user');
+
+// Efficiently insert multiple users
+for (const userData of largeDataset) {
+  await insertUser.execute(userData);
+}
+```
+
+## Connection Pooling
+
+### Configure Pool Size
+
+Optimize connection pool settings:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: 5432,
+  user: 'postgres',
+  password: 'password',
+  database: 'mydb',
+  // Connection pool configuration
+  max: 20,              // Maximum pool size
+  min: 5,               // Minimum pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+const db = drizzle(pool);
+```
+
+### Pool Size Guidelines
+
+<Steps>
+  <Step title="Start with conservative values">
+    Begin with max: 10-20 connections for typical applications.
+  </Step>
+  
+  <Step title="Monitor connection usage">
+    Track active connections under load.
+  </Step>
+  
+  <Step title="Calculate based on formula">
+    `connections = (core_count * 2) + effective_spindle_count`
+  </Step>
+  
+  <Step title="Consider connection overhead">
+    Each connection consumes memory on both application and database server.
+  </Step>
+</Steps>
+
+## Batching and Bulk Operations
+
+### Batch Inserts
+
+Insert multiple rows in a single query:
+
+```typescript
+// ✗ SLOW: Individual inserts
+for (const user of users) {
+  await db.insert(users).values(user);
+}
+// 1000 inserts = 1000 round trips
+
+// ✓ FAST: Batch insert
+await db.insert(users).values(users);
+// 1000 inserts = 1 round trip
+```
+
+### Batch with Returning
+
+Get inserted IDs efficiently:
+
+```typescript
+const inserted = await db
+  .insert(users)
+  .values([
+    { name: 'John', email: 'john@example.com' },
+    { name: 'Jane', email: 'jane@example.com' },
+    { name: 'Bob', email: 'bob@example.com' },
+  ])
+  .returning({ id: users.id, name: users.name });
+
+console.log(inserted);
+// [{ id: 1, name: 'John' }, { id: 2, name: 'Jane' }, { id: 3, name: 'Bob' }]
+```
+
+### Update in Batches
+
+When updating large datasets:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Update in chunks
+const BATCH_SIZE = 1000;
+const userIds = [...]; // Large array of IDs
+
+for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+  const batch = userIds.slice(i, i + BATCH_SIZE);
+  await db
+    .update(users)
+    .set({ verified: true })
+    .where(inArray(users.id, batch));
+}
+```
+
+## Pagination Strategies
+
+### Offset-Based Pagination
+
+Standard pagination for small to medium datasets:
+
+```typescript
+function getUsers(page: number, pageSize: number = 20) {
+  return db
+    .select()
+    .from(users)
+    .limit(pageSize)
+    .offset(page * pageSize);
+}
+```
+
+<Warning>
+Offset-based pagination becomes slow for large offsets as the database still needs to scan all previous rows.
+</Warning>
+
+### Cursor-Based Pagination
+
+Efficient pagination for large datasets:
+
+```typescript
+function getUsers(cursor?: number, pageSize: number = 20) {
+  let query = db
+    .select()
+    .from(users)
+    .orderBy(users.id)
+    .limit(pageSize + 1); // Fetch one extra to check for next page
+
+  if (cursor) {
+    query = query.where(gt(users.id, cursor));
+  }
+
+  return query;
+}
+
+// Usage
+const page1 = await getUsers();
+const lastId = page1[page1.length - 1]?.id;
+const page2 = await getUsers(lastId);
+```
+
+### Keyset Pagination
+
+Most efficient for ordered datasets:
+
+```typescript
+interface PageCursor {
+  createdAt: Date;
+  id: number;
+}
+
+async function getPosts(
+  cursor?: PageCursor,
+  pageSize: number = 20
+) {
+  let query = db
+    .select()
+    .from(posts)
+    .orderBy(desc(posts.createdAt), desc(posts.id))
+    .limit(pageSize + 1);
+
+  if (cursor) {
+    query = query.where(
+      or(
+        lt(posts.createdAt, cursor.createdAt),
+        and(
+          eq(posts.createdAt, cursor.createdAt),
+          lt(posts.id, cursor.id)
+        )
+      )
+    );
+  }
+
+  return query;
+}
+```
+
+## Join Optimization
+
+### Choose the Right Join Type
+
+```typescript
+// INNER JOIN - Only matching rows (faster)
+const usersWithPosts = await db
+  .select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.userId));
+
+// LEFT JOIN - All users, even without posts (slower)
+const allUsers = await db
+  .select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId));
+```
+
+### Avoid N+1 Queries
+
+Use joins or relational queries instead of loops:
+
+```typescript
+// ✗ BAD: N+1 query problem
+const users = await db.select().from(users);
+for (const user of users) {
+  user.posts = await db.select().from(posts).where(eq(posts.userId, user.id));
+}
+// 1 + N queries
+
+// ✓ GOOD: Single query with join
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+// 1 query
+```
+
+### Limit Joined Data
+
+Prevent excessive data loading:
+
+```typescript
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      limit: 5, // Only fetch 5 most recent posts per user
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+    },
+  },
+});
+```
+
+## Caching Strategies
+
+### Query-Level Caching
+
+Implement caching for expensive queries:
+
+```typescript
+import { Redis } from 'ioredis';
+
+const redis = new Redis();
+
+async function getPopularPosts() {
+  const cacheKey = 'popular_posts';
+  
+  // Check cache
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+  
+  // Query database
+  const posts = await db
+    .select()
+    .from(posts)
+    .orderBy(desc(posts.viewCount))
+    .limit(10);
+  
+  // Cache for 5 minutes
+  await redis.set(cacheKey, JSON.stringify(posts), 'EX', 300);
+  
+  return posts;
+}
+```
+
+### Prepared Statement Caching
+
+Drizzle automatically caches prepared statements:
+
+```typescript
+// Statement is cached by name
+const stmt = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user');
+
+// Subsequent calls reuse the cached statement
+await stmt.execute({ id: 1 });
+await stmt.execute({ id: 2 });
+```
+
+## Aggregation Performance
+
+### Use Database Aggregations
+
+Perform aggregations in the database, not in application code:
+
+```typescript
+// ✗ SLOW: Fetch all data and count in JS
+const allPosts = await db.select().from(posts);
+const count = allPosts.length;
+
+// ✓ FAST: Count in database
+const result = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(posts);
+const count = result[0].count;
+```
+
+### Partial Aggregations
+
+Aggregate only required data:
+
+```typescript
+const stats = await db
+  .select({
+    userId: posts.userId,
+    postCount: sql<number>`count(*)`,
+    avgLength: sql<number>`avg(length(${posts.content}))`,
+    latestPost: sql<Date>`max(${posts.createdAt})`,
+  })
+  .from(posts)
+  .where(eq(posts.status, 'published'))
+  .groupBy(posts.userId);
+```
+
+## Transaction Performance
+
+### Batch Operations in Transactions
+
+Group related operations:
+
+```typescript
+await db.transaction(async (tx) => {
+  // All operations in one transaction
+  const user = await tx.insert(users).values(userData).returning();
+  await tx.insert(profiles).values({ userId: user[0].id, ...profileData });
+  await tx.insert(settings).values({ userId: user[0].id, ...settingsData });
+});
+```
+
+### Avoid Long Transactions
+
+<Warning>
+Long-running transactions can lock tables and cause performance issues.
+</Warning>
+
+```typescript
+// ✗ BAD: External API call in transaction
+await db.transaction(async (tx) => {
+  await tx.insert(orders).values(orderData);
+  await sendEmailNotification(order); // Slow external API call
+  await tx.update(inventory).set({ quantity: qty - 1 });
+});
+
+// ✓ GOOD: External calls outside transaction
+await db.transaction(async (tx) => {
+  await tx.insert(orders).values(orderData);
+  await tx.update(inventory).set({ quantity: qty - 1 });
+});
+await sendEmailNotification(order); // After transaction commits
+```
+
+## Monitoring and Profiling
+
+### Enable Query Logging
+
+Log queries during development:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+const db = drizzle(client, {
+  logger: true, // Log all queries to console
+});
+
+// Or use custom logger
+const db = drizzle(client, {
+  logger: {
+    logQuery(query, params) {
+      console.log('Query:', query);
+      console.log('Params:', params);
+      console.log('Time:', Date.now());
+    },
+  },
+});
+```
+
+### Analyze Query Performance
+
+Use EXPLAIN ANALYZE:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const explain = await db.execute(sql`
+  EXPLAIN ANALYZE
+  SELECT * FROM users
+  WHERE email = 'test@example.com'
+`);
+
+console.log(explain);
+```
+
+### Measure Query Execution Time
+
+```typescript
+async function measureQuery<T>(name: string, query: () => Promise<T>): Promise<T> {
+  const start = performance.now();
+  const result = await query();
+  const end = performance.now();
+  console.log(`${name}: ${(end - start).toFixed(2)}ms`);
+  return result;
+}
+
+// Usage
+const users = await measureQuery('getUsers', () =>
+  db.select().from(users).where(eq(users.active, true))
+);
+```
+
+## Schema Design
+
+### Normalize Appropriately
+
+Balance normalization vs. query performance:
+
+```typescript
+// Sometimes denormalization improves read performance
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  authorId: integer('author_id').notNull(),
+  authorName: text('author_name').notNull(), // Denormalized for faster reads
+  createdAt: timestamp('created_at').notNull(),
+});
+```
+
+### Use Appropriate Data Types
+
+Choose optimal column types:
+
+```typescript
+import { smallint, integer, bigint } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  age: smallint('age'),        // -32768 to 32767 (2 bytes)
+  score: integer('score'),     // -2B to 2B (4 bytes)
+  points: bigint('points', { mode: 'number' }), // Large numbers (8 bytes)
+});
+```
+
+## Best Practices Summary
+
+<Steps>
+  <Step title="Index frequently queried columns">
+    Create indexes on WHERE, JOIN, and ORDER BY columns.
+  </Step>
+  
+  <Step title="Use prepared statements for repeated queries">
+    Reduce planning overhead by 30-60%.
+  </Step>
+  
+  <Step title="Fetch only required data">
+    Select specific columns, not `SELECT *`.
+  </Step>
+  
+  <Step title="Batch operations when possible">
+    Reduce round trips with batch inserts/updates.
+  </Step>
+  
+  <Step title="Implement cursor-based pagination">
+    Avoid slow OFFSET queries on large tables.
+  </Step>
+  
+  <Step title="Avoid N+1 query problems">
+    Use joins or relational queries, not loops.
+  </Step>
+  
+  <Step title="Configure connection pooling">
+    Match pool size to workload and server capacity.
+  </Step>
+  
+  <Step title="Monitor query performance">
+    Use logging and EXPLAIN ANALYZE in development.
+  </Step>
+</Steps>
+
+## Performance Checklist
+
+<CodeGroup>
+
+```typescript Query Optimization
+// ✓ Select only needed columns
+// ✓ Use indexes for WHERE conditions
+// ✓ Avoid functions on indexed columns in WHERE
+// ✓ Use prepared statements for repeated queries
+// ✓ Limit result sets appropriately
+
+const optimized = await db
+  .select({ id: users.id, name: users.name })
+  .from(users)
+  .where(eq(users.email, placeholder('email')))
+  .limit(20)
+  .prepare('get_users');
+```
+
+```typescript Batch Operations
+// ✓ Batch inserts
+// ✓ Use transactions for related operations
+// ✓ Process large updates in chunks
+// ✓ Return only needed data with RETURNING
+
+await db.transaction(async (tx) => {
+  await tx.insert(users).values(largeUserArray);
+});
+```
+
+```typescript Join Optimization
+// ✓ Use appropriate join type
+// ✓ Limit joined data
+// ✓ Avoid N+1 queries
+// ✓ Use relational queries when possible
+
+const efficient = await db.query.users.findMany({
+  with: {
+    posts: {
+      limit: 5,
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+    },
+  },
+});
+```
+
+</CodeGroup>
+
+<Tip>
+Profile your application under realistic load to identify actual bottlenecks. Premature optimization without measurement can waste time.
+</Tip>

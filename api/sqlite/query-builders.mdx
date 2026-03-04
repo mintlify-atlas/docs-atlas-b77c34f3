@@ -1,0 +1,666 @@
+---
+title: SQLite Query Builders
+description: Query builder APIs for SELECT, INSERT, UPDATE, and DELETE operations
+---
+
+## Select Query Builder
+
+The select query builder provides a fluent API for constructing SELECT queries.
+
+### from()
+
+Specifies the table or subquery to select from.
+
+```typescript
+from<TFrom extends SQLiteTable | Subquery | SQLiteViewBase | SQL>(
+  source: TFrom
+): SQLiteSelectQuery
+```
+
+```typescript
+const result = await db.select().from(users);
+```
+
+### where()
+
+Adds a WHERE clause to filter results.
+
+```typescript
+where(condition: SQL | undefined): this
+```
+
+<CodeGroup>
+```typescript Single condition
+import { eq } from 'drizzle-orm';
+
+const result = await db
+  .select()
+  .from(users)
+  .where(eq(users.id, 1));
+```
+
+```typescript Multiple conditions
+import { and, eq, gt } from 'drizzle-orm';
+
+const result = await db
+  .select()
+  .from(users)
+  .where(and(
+    eq(users.role, 'admin'),
+    gt(users.age, 18)
+  ));
+```
+</CodeGroup>
+
+### orderBy()
+
+Orders results by one or more columns.
+
+```typescript
+orderBy(...columns: (SQLiteColumn | SQL)[]): this
+```
+
+<CodeGroup>
+```typescript Ascending
+import { asc } from 'drizzle-orm';
+
+const result = await db
+  .select()
+  .from(users)
+  .orderBy(users.name);
+// or explicitly:
+  .orderBy(asc(users.name));
+```
+
+```typescript Descending
+import { desc } from 'drizzle-orm';
+
+const result = await db
+  .select()
+  .from(users)
+  .orderBy(desc(users.createdAt));
+```
+
+```typescript Multiple columns
+const result = await db
+  .select()
+  .from(users)
+  .orderBy(users.role, desc(users.createdAt));
+```
+</CodeGroup>
+
+### limit()
+
+Limits the number of rows returned.
+
+```typescript
+limit(limit: number | Placeholder): this
+```
+
+```typescript
+const result = await db
+  .select()
+  .from(users)
+  .limit(10);
+```
+
+### offset()
+
+Skips a specified number of rows.
+
+```typescript
+offset(offset: number | Placeholder): this
+```
+
+```typescript
+const result = await db
+  .select()
+  .from(users)
+  .limit(10)
+  .offset(20);
+```
+
+### groupBy()
+
+Groups results by one or more columns.
+
+```typescript
+groupBy(...columns: (SQLiteColumn | SQL)[]): this
+```
+
+```typescript
+import { count } from 'drizzle-orm';
+
+const result = await db
+  .select({
+    role: users.role,
+    count: count(),
+  })
+  .from(users)
+  .groupBy(users.role);
+```
+
+### having()
+
+Filters grouped results (use with groupBy).
+
+```typescript
+having(condition: SQL | undefined): this
+```
+
+```typescript
+import { count, gt } from 'drizzle-orm';
+
+const result = await db
+  .select({
+    role: users.role,
+    count: count(),
+  })
+  .from(users)
+  .groupBy(users.role)
+  .having(gt(count(), 5));
+```
+
+## Joins
+
+### leftJoin()
+
+Performs a LEFT JOIN.
+
+```typescript
+leftJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL | undefined
+): this
+```
+
+```typescript
+const result = await db
+  .select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.authorId));
+```
+
+### rightJoin()
+
+Performs a RIGHT JOIN.
+
+```typescript
+rightJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL | undefined
+): this
+```
+
+```typescript
+const result = await db
+  .select()
+  .from(users)
+  .rightJoin(posts, eq(users.id, posts.authorId));
+```
+
+### innerJoin()
+
+Performs an INNER JOIN.
+
+```typescript
+innerJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL | undefined
+): this
+```
+
+```typescript
+const result = await db
+  .select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.authorId));
+```
+
+### fullJoin()
+
+Performs a FULL JOIN.
+
+```typescript
+fullJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL | undefined
+): this
+```
+
+```typescript
+const result = await db
+  .select()
+  .from(users)
+  .fullJoin(posts, eq(users.id, posts.authorId));
+```
+
+### Selecting from Joins
+
+```typescript
+const result = await db
+  .select({
+    userId: users.id,
+    userName: users.name,
+    postTitle: posts.title,
+  })
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.authorId));
+```
+
+## Set Operations
+
+### union()
+
+Combines results from multiple queries (removes duplicates).
+
+```typescript
+union<T extends AnySQLiteSelect>(other: T): SQLiteSetOperator
+```
+
+```typescript
+const activeUsers = db.select().from(users).where(eq(users.active, true));
+const adminUsers = db.select().from(users).where(eq(users.role, 'admin'));
+
+const result = await activeUsers.union(adminUsers);
+```
+
+### unionAll()
+
+Combines results from multiple queries (keeps duplicates).
+
+```typescript
+unionAll<T extends AnySQLiteSelect>(other: T): SQLiteSetOperator
+```
+
+```typescript
+const result = await query1.unionAll(query2);
+```
+
+### intersect()
+
+Returns rows that appear in both queries.
+
+```typescript
+intersect<T extends AnySQLiteSelect>(other: T): SQLiteSetOperator
+```
+
+```typescript
+const result = await query1.intersect(query2);
+```
+
+### except()
+
+Returns rows from the first query that don't appear in the second.
+
+```typescript
+except<T extends AnySQLiteSelect>(other: T): SQLiteSetOperator
+```
+
+```typescript
+const allUsers = db.select().from(users);
+const inactiveUsers = db.select().from(users).where(eq(users.active, false));
+
+const activeUsers = await allUsers.except(inactiveUsers);
+```
+
+## Insert Query Builder
+
+### values()
+
+Specifies the values to insert.
+
+```typescript
+values(
+  value: SQLiteInsertValue<TTable>
+): SQLiteInsertBase
+values(
+  values: SQLiteInsertValue<TTable>[]
+): SQLiteInsertBase
+```
+
+<CodeGroup>
+```typescript Single row
+await db.insert(users).values({
+  name: 'Alice',
+  email: 'alice@example.com',
+});
+```
+
+```typescript Multiple rows
+await db.insert(users).values([
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' },
+]);
+```
+</CodeGroup>
+
+### select()
+
+Inserts rows from a SELECT query.
+
+```typescript
+select(selectQuery: SQLiteSelectQuery): SQLiteInsertBase
+```
+
+```typescript
+await db.insert(usersCopy)
+  .select(
+    db.select().from(users).where(eq(users.active, true))
+  );
+```
+
+### onConflictDoNothing()
+
+Ignores conflicts (SQLite: INSERT OR IGNORE).
+
+```typescript
+onConflictDoNothing(config?: { target?: IndexColumn | IndexColumn[] }): this
+```
+
+<CodeGroup>
+```typescript Ignore all conflicts
+await db.insert(users)
+  .values({ id: 1, name: 'Alice' })
+  .onConflictDoNothing();
+```
+
+```typescript Ignore specific column conflicts
+await db.insert(users)
+  .values({ email: 'alice@example.com', name: 'Alice' })
+  .onConflictDoNothing({ target: users.email });
+```
+</CodeGroup>
+
+### onConflictDoUpdate()
+
+Updates on conflict (SQLite: INSERT OR REPLACE).
+
+```typescript
+onConflictDoUpdate(config: {
+  target: IndexColumn | IndexColumn[];
+  set: SQLiteUpdateSetSource<TTable>;
+  where?: SQL;
+  targetWhere?: SQL;
+  setWhere?: SQL;
+}): this
+```
+
+<CodeGroup>
+```typescript Upsert
+import { sql } from 'drizzle-orm';
+
+await db.insert(users)
+  .values({ email: 'alice@example.com', name: 'Alice' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: sql`excluded.name` },
+  });
+```
+
+```typescript Conditional update
+await db.insert(users)
+  .values({ email: 'alice@example.com', name: 'Alice', score: 100 })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { score: sql`excluded.score` },
+    setWhere: sql`excluded.score > ${users.score}`,
+  });
+```
+</CodeGroup>
+
+### returning()
+
+Returns inserted rows.
+
+```typescript
+returning(): SQLiteInsert
+returning<TSelectedFields>(
+  fields: TSelectedFields
+): SQLiteInsert
+```
+
+<CodeGroup>
+```typescript Return all columns
+const result = await db.insert(users)
+  .values({ name: 'Alice' })
+  .returning();
+// [{ id: 1, name: 'Alice', email: null, ... }]
+```
+
+```typescript Return specific columns
+const result = await db.insert(users)
+  .values({ name: 'Alice' })
+  .returning({ id: users.id, name: users.name });
+// [{ id: 1, name: 'Alice' }]
+```
+</CodeGroup>
+
+## Update Query Builder
+
+### set()
+
+Specifies the values to update.
+
+```typescript
+set(values: SQLiteUpdateSetSource<TTable>): this
+```
+
+<CodeGroup>
+```typescript Update values
+await db.update(users)
+  .set({ name: 'Alice Updated' })
+  .where(eq(users.id, 1));
+```
+
+```typescript Update with expressions
+import { sql } from 'drizzle-orm';
+
+await db.update(users)
+  .set({ 
+    score: sql`${users.score} + 10`,
+    updatedAt: new Date(),
+  })
+  .where(eq(users.id, 1));
+```
+</CodeGroup>
+
+### where()
+
+Filters which rows to update.
+
+```typescript
+where(condition: SQL | undefined): this
+```
+
+```typescript
+await db.update(users)
+  .set({ active: false })
+  .where(eq(users.email, 'user@example.com'));
+```
+
+### returning()
+
+Returns updated rows.
+
+```typescript
+returning(): SQLiteUpdate
+returning<TSelectedFields>(
+  fields: TSelectedFields
+): SQLiteUpdate
+```
+
+```typescript
+const result = await db.update(users)
+  .set({ active: true })
+  .where(eq(users.id, 1))
+  .returning({ id: users.id, active: users.active });
+```
+
+### from()
+
+Updates using joins with other tables.
+
+```typescript
+from<TFrom extends SQLiteTable | Subquery | SQLiteViewBase | SQL>(
+  source: TFrom
+): this
+```
+
+```typescript
+await db.update(users)
+  .set({ role: 'premium' })
+  .from(subscriptions)
+  .where(and(
+    eq(users.id, subscriptions.userId),
+    eq(subscriptions.status, 'active')
+  ));
+```
+
+## Delete Query Builder
+
+### where()
+
+Filters which rows to delete.
+
+```typescript
+where(condition: SQL | undefined): this
+```
+
+<CodeGroup>
+```typescript Delete specific rows
+await db.delete(users)
+  .where(eq(users.id, 1));
+```
+
+```typescript Delete with multiple conditions
+import { and, lt } from 'drizzle-orm';
+
+await db.delete(users)
+  .where(and(
+    eq(users.active, false),
+    lt(users.lastLogin, new Date('2023-01-01'))
+  ));
+```
+</CodeGroup>
+
+### returning()
+
+Returns deleted rows.
+
+```typescript
+returning(): SQLiteDelete
+returning<TSelectedFields>(
+  fields: TSelectedFields
+): SQLiteDelete
+```
+
+```typescript
+const deleted = await db.delete(users)
+  .where(eq(users.id, 1))
+  .returning();
+console.log('Deleted user:', deleted[0]);
+```
+
+### orderBy()
+
+Orders rows before deletion (used with LIMIT).
+
+```typescript
+orderBy(...columns: (SQLiteColumn | SQL)[]): this
+```
+
+```typescript
+import { desc } from 'drizzle-orm';
+
+// Delete oldest 10 inactive users
+await db.delete(users)
+  .where(eq(users.active, false))
+  .orderBy(users.createdAt)
+  .limit(10);
+```
+
+### limit()
+
+Limits the number of rows to delete.
+
+```typescript
+limit(limit: number | Placeholder): this
+```
+
+```typescript
+// Delete up to 100 old records
+await db.delete(logs)
+  .where(lt(logs.createdAt, thirtyDaysAgo))
+  .limit(100);
+```
+
+## Prepared Statements
+
+All query builders support prepared statements for better performance.
+
+### prepare()
+
+Creates a prepared statement.
+
+```typescript
+prepare(): SQLitePreparedQuery
+```
+
+<CodeGroup>
+```typescript Select
+const prepared = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare();
+
+const user1 = await prepared.get({ id: 1 });
+const user2 = await prepared.get({ id: 2 });
+```
+
+```typescript Insert
+const prepared = db
+  .insert(users)
+  .values({
+    name: placeholder('name'),
+    email: placeholder('email'),
+  })
+  .prepare();
+
+await prepared.run({ name: 'Alice', email: 'alice@example.com' });
+await prepared.run({ name: 'Bob', email: 'bob@example.com' });
+```
+</CodeGroup>
+
+## Dynamic Queries
+
+Create conditional queries at runtime.
+
+### $dynamic()
+
+Enables dynamic mode for conditional query building.
+
+```typescript
+$dynamic(): this
+```
+
+```typescript
+let query = db.select().from(users).$dynamic();
+
+if (filters.role) {
+  query = query.where(eq(users.role, filters.role));
+}
+
+if (filters.minAge) {
+  query = query.where(gte(users.age, filters.minAge));
+}
+
+if (orderBy === 'name') {
+  query = query.orderBy(users.name);
+} else if (orderBy === 'age') {
+  query = query.orderBy(users.age);
+}
+
+const result = await query;
+```

@@ -1,0 +1,499 @@
+---
+title: Queries
+description: Perform type-safe database queries with Drizzle ORM's fluent API
+---
+
+## Overview
+
+Drizzle ORM provides a type-safe query builder for all CRUD operations. Queries are built using a fluent, chainable API that mirrors SQL syntax.
+
+## Select Queries
+
+### Basic Select
+
+Select all columns and rows from a table:
+
+```typescript
+import { db } from './db';
+import { users } from './schema';
+
+// Select all users
+const allUsers = await db.select().from(users);
+// Type: { id: number; name: string; email: string }[]
+```
+
+### Select Specific Columns
+
+Choose which columns to return:
+
+```typescript
+// Select specific columns
+const userNames = await db.select({ 
+  id: users.id, 
+  name: users.name 
+}).from(users);
+// Type: { id: number; name: string }[]
+
+// Use expressions
+import { sql } from 'drizzle-orm';
+
+const usersWithLowerEmail = await db.select({
+  id: users.id,
+  name: users.name,
+  lowerEmail: sql<string>`lower(${users.email})`.as('lower_email'),
+}).from(users);
+```
+
+### Where Conditions
+
+Filter results using conditions:
+
+```typescript
+import { eq, gt, lt, gte, lte, ne, and, or, like, inArray } from 'drizzle-orm';
+
+// Simple equality
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1));
+
+// Comparisons
+const adults = await db.select()
+  .from(users)
+  .where(gte(users.age, 18));
+
+// Multiple conditions with AND
+const activeAdults = await db.select()
+  .from(users)
+  .where(and(
+    gte(users.age, 18),
+    eq(users.active, true)
+  ));
+
+// OR conditions
+const adminOrModerator = await db.select()
+  .from(users)
+  .where(or(
+    eq(users.role, 'admin'),
+    eq(users.role, 'moderator')
+  ));
+
+// Pattern matching
+const gmailUsers = await db.select()
+  .from(users)
+  .where(like(users.email, '%@gmail.com'));
+
+// IN array
+const specificUsers = await db.select()
+  .from(users)
+  .where(inArray(users.id, [1, 2, 3]));
+```
+
+### Ordering
+
+```typescript
+import { asc, desc } from 'drizzle-orm';
+
+// Ascending order
+const usersByName = await db.select()
+  .from(users)
+  .orderBy(asc(users.name));
+
+// Descending order
+const latestUsers = await db.select()
+  .from(users)
+  .orderBy(desc(users.createdAt));
+
+// Multiple columns
+const sortedUsers = await db.select()
+  .from(users)
+  .orderBy(asc(users.role), desc(users.createdAt));
+```
+
+### Limit and Offset
+
+```typescript
+// Pagination
+const page1 = await db.select()
+  .from(users)
+  .limit(10)
+  .offset(0);
+
+const page2 = await db.select()
+  .from(users)
+  .limit(10)
+  .offset(10);
+```
+
+### Distinct
+
+```typescript
+// Select unique values
+const uniqueRoles = await db.selectDistinct({ role: users.role })
+  .from(users);
+
+// PostgreSQL: distinct on specific columns
+import { eq } from 'drizzle-orm';
+
+const latestPerRole = await db.selectDistinctOn([users.role])
+  .from(users)
+  .orderBy(users.role, desc(users.createdAt));
+```
+
+## Joins
+
+### Inner Join
+
+```typescript
+import { users, posts } from './schema';
+import { eq } from 'drizzle-orm';
+
+// Join users with their posts
+const usersWithPosts = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postId: posts.id,
+  postTitle: posts.title,
+})
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.authorId));
+```
+
+### Left Join
+
+```typescript
+// Include users even if they have no posts
+const allUsersWithPosts = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postId: posts.id,
+  postTitle: posts.title,
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.authorId));
+// postId and postTitle will be null for users without posts
+```
+
+### Multiple Joins
+
+```typescript
+import { users, posts, comments } from './schema';
+
+const postsWithAuthorsAndComments = await db.select()
+  .from(posts)
+  .leftJoin(users, eq(posts.authorId, users.id))
+  .leftJoin(comments, eq(posts.id, comments.postId));
+```
+
+## Insert Queries
+
+### Insert Single Row
+
+```typescript
+// Insert one user
+const result = await db.insert(users).values({
+  name: 'John Doe',
+  email: 'john@example.com',
+});
+
+// Insert with returning
+const [newUser] = await db.insert(users).values({
+  name: 'Jane Doe',
+  email: 'jane@example.com',
+}).returning();
+// Type: { id: number; name: string; email: string }
+
+// Return specific columns
+const [userId] = await db.insert(users).values({
+  name: 'Bob',
+  email: 'bob@example.com',
+}).returning({ id: users.id });
+```
+
+### Insert Multiple Rows
+
+```typescript
+// Batch insert
+const newUsers = await db.insert(users).values([
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' },
+  { name: 'Charlie', email: 'charlie@example.com' },
+]).returning();
+```
+
+### Upsert (On Conflict)
+
+```typescript
+// PostgreSQL and SQLite
+const [user] = await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'John Updated' },
+  })
+  .returning();
+
+// MySQL
+const result = await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John' })
+  .onDuplicateKeyUpdate({
+    set: { name: 'John Updated' },
+  });
+```
+
+## Update Queries
+
+### Update Rows
+
+```typescript
+import { eq } from 'drizzle-orm';
+
+// Update specific user
+const result = await db.update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1));
+
+// Update with returning
+const [updatedUser] = await db.update(users)
+  .set({ name: 'Jane Updated', email: 'jane.new@example.com' })
+  .where(eq(users.id, 2))
+  .returning();
+
+// Update multiple rows
+const updated = await db.update(users)
+  .set({ active: false })
+  .where(lt(users.lastLoginAt, new Date('2023-01-01')));
+```
+
+### Update with Expressions
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Increment a counter
+await db.update(posts)
+  .set({ views: sql`${posts.views} + 1` })
+  .where(eq(posts.id, 1));
+```
+
+## Delete Queries
+
+### Delete Rows
+
+```typescript
+import { eq, lt } from 'drizzle-orm';
+
+// Delete specific user
+const result = await db.delete(users)
+  .where(eq(users.id, 1));
+
+// Delete with returning
+const [deletedUser] = await db.delete(users)
+  .where(eq(users.id, 2))
+  .returning();
+
+// Delete multiple rows
+const deleted = await db.delete(users)
+  .where(lt(users.createdAt, new Date('2023-01-01')));
+```
+
+<Warning>
+Be careful when deleting without a WHERE clause - it will delete all rows in the table!
+</Warning>
+
+## Aggregations
+
+### Count, Sum, Avg
+
+```typescript
+import { sql, count, sum, avg, max, min } from 'drizzle-orm';
+
+// Count all users
+const [{ count: userCount }] = await db.select({ 
+  count: count() 
+}).from(users);
+
+// Count with condition
+const [{ activeCount }] = await db.select({ 
+  activeCount: count() 
+})
+  .from(users)
+  .where(eq(users.active, true));
+
+// Sum
+const [{ totalViews }] = await db.select({ 
+  totalViews: sum(posts.views) 
+}).from(posts);
+
+// Average
+const [{ avgAge }] = await db.select({ 
+  avgAge: avg(users.age) 
+}).from(users);
+
+// Min and Max
+const [{ oldest, youngest }] = await db.select({ 
+  oldest: max(users.age),
+  youngest: min(users.age),
+}).from(users);
+```
+
+### Group By
+
+```typescript
+import { count } from 'drizzle-orm';
+
+// Count users by role
+const usersByRole = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role);
+
+// Average age by city
+const avgAgeByCity = await db.select({
+  city: users.city,
+  avgAge: avg(users.age),
+})
+  .from(users)
+  .groupBy(users.city);
+```
+
+### Having
+
+```typescript
+import { count, gt } from 'drizzle-orm';
+
+// Cities with more than 100 users
+const popularCities = await db.select({
+  city: users.city,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.city)
+  .having(({ count }) => gt(count, 100));
+```
+
+## Relational Queries
+
+With schema relations defined, use the simpler relational query API:
+
+```typescript
+import { db } from './db';
+
+// Find user with posts
+const user = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, 1),
+  with: {
+    posts: true,
+  },
+});
+
+// Nested relations
+const userWithPostsAndComments = await db.query.users.findFirst({
+  with: {
+    posts: {
+      with: {
+        comments: true,
+      },
+    },
+  },
+});
+
+// Filter nested relations
+const userWithRecentPosts = await db.query.users.findFirst({
+  with: {
+    posts: {
+      where: (posts, { gte }) => gte(posts.createdAt, new Date('2024-01-01')),
+      limit: 10,
+    },
+  },
+});
+```
+
+## Subqueries
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Subquery in WHERE
+const activeUserIds = db.select({ id: users.id })
+  .from(users)
+  .where(eq(users.active, true));
+
+const postsFromActiveUsers = await db.select()
+  .from(posts)
+  .where(inArray(posts.authorId, activeUserIds));
+
+// Subquery with alias
+const sq = db.$with('sq').as(
+  db.select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.active, true))
+);
+
+const result = await db.with(sq)
+  .select()
+  .from(sq);
+```
+
+## Raw SQL
+
+Execute raw SQL when needed:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Raw query
+const result = await db.execute(sql`SELECT * FROM users WHERE id = ${1}`);
+
+// Raw SQL in expressions
+const users = await db.select({
+  id: users.id,
+  upperName: sql<string>`upper(${users.name})`,
+}).from(users);
+```
+
+## Prepared Statements
+
+Optimize repeated queries:
+
+```typescript
+import { placeholder } from 'drizzle-orm';
+
+// Prepare a query
+const prepared = db.select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Execute with different values
+const user1 = await prepared.execute({ id: 1 });
+const user2 = await prepared.execute({ id: 2 });
+```
+
+## Best Practices
+
+<Note>
+- **Type safety**: Let TypeScript infer types from your queries
+- **Prepared statements**: Use for frequently executed queries
+- **Batch operations**: Insert/update multiple rows in a single query
+- **Indexes**: Add indexes for frequently filtered/joined columns
+- **Select only needed columns**: Reduces data transfer and processing
+</Note>
+
+<Warning>
+- Always use parameterized queries to prevent SQL injection
+- Be cautious with DELETE and UPDATE without WHERE clauses
+- Use transactions for operations that must succeed or fail together
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Relations" icon="link" href="/core/relations">
+    Define and query table relationships
+  </Card>
+  <Card title="Transactions" icon="rotate" href="/core/transactions">
+    Learn about database transactions
+  </Card>
+</CardGroup>

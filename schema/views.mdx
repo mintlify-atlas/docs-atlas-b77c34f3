@@ -1,0 +1,458 @@
+---
+title: Views
+description: Create database views and materialized views with Drizzle ORM for simplified queries and performance.
+---
+
+Views are virtual tables based on the result of a SQL query. They simplify complex queries, improve security, and in the case of materialized views, can significantly boost performance.
+
+## Standard views
+
+### Query-based views
+
+Create a view from a Drizzle query:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { pgTable, pgView, serial, text, integer, timestamp } from 'drizzle-orm/pg-core';
+    import { sql } from 'drizzle-orm';
+
+    export const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+      name: text('name').notNull(),
+      email: text('email').notNull(),
+      createdAt: timestamp('created_at').defaultNow(),
+    });
+
+    export const posts = pgTable('posts', {
+      id: serial('id').primaryKey(),
+      title: text('title').notNull(),
+      authorId: integer('author_id').notNull(),
+      published: boolean('published').default(false),
+    });
+
+    // Create view using query builder
+    export const publishedPosts = pgView('published_posts').as((qb) =>
+      qb.select({
+        id: posts.id,
+        title: posts.title,
+        authorName: users.name,
+        authorEmail: users.email,
+      })
+      .from(posts)
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(eq(posts.published, true))
+    );
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { mysqlTable, mysqlView, serial, text, int, timestamp, boolean } from 'drizzle-orm/mysql-core';
+    import { eq } from 'drizzle-orm';
+
+    export const users = mysqlTable('users', {
+      id: serial('id').primaryKey(),
+      name: text('name').notNull(),
+      email: text('email').notNull(),
+    });
+
+    export const posts = mysqlTable('posts', {
+      id: serial('id').primaryKey(),
+      title: text('title').notNull(),
+      authorId: int('author_id').notNull(),
+      published: boolean('published').default(false),
+    });
+
+    export const publishedPosts = mysqlView('published_posts').as((qb) =>
+      qb.select({
+        id: posts.id,
+        title: posts.title,
+        authorName: users.name,
+      })
+      .from(posts)
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(eq(posts.published, true))
+    );
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { sqliteTable, sqliteView, integer, text } from 'drizzle-orm/sqlite-core';
+    import { eq } from 'drizzle-orm';
+
+    export const users = sqliteTable('users', {
+      id: integer('id').primaryKey(),
+      name: text('name').notNull(),
+    });
+
+    export const posts = sqliteTable('posts', {
+      id: integer('id').primaryKey(),
+      title: text('title').notNull(),
+      authorId: integer('author_id').notNull(),
+      published: integer('published', { mode: 'boolean' }),
+    });
+
+    export const publishedPosts = sqliteView('published_posts').as((qb) =>
+      qb.select({
+        id: posts.id,
+        title: posts.title,
+        authorName: users.name,
+      })
+      .from(posts)
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(eq(posts.published, true))
+    );
+    ```
+  </Tab>
+</Tabs>
+
+### SQL-based views
+
+Define views with raw SQL for complex queries:
+
+```typescript
+import { pgView, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+export const userStats = pgView('user_stats', {
+  userId: serial('user_id'),
+  postCount: integer('post_count'),
+  lastPostDate: timestamp('last_post_date'),
+}).as(sql`
+  SELECT 
+    u.id as user_id,
+    COUNT(p.id) as post_count,
+    MAX(p.created_at) as last_post_date
+  FROM users u
+  LEFT JOIN posts p ON u.id = p.author_id
+  GROUP BY u.id
+`);
+```
+
+### Querying views
+
+Use views like regular tables:
+
+```typescript
+import { db } from './db';
+import { publishedPosts } from './schema';
+import { eq } from 'drizzle-orm';
+
+// Select from view
+const posts = await db.select().from(publishedPosts);
+
+// Filter view results
+const post = await db
+  .select()
+  .from(publishedPosts)
+  .where(eq(publishedPosts.id, 1));
+
+// Join with other tables
+const results = await db
+  .select()
+  .from(publishedPosts)
+  .innerJoin(comments, eq(publishedPosts.id, comments.postId));
+```
+
+## Existing views
+
+Reference views created outside Drizzle:
+
+```typescript
+import { pgView, serial, text, integer } from 'drizzle-orm/pg-core';
+
+// Define the structure of an existing view
+export const legacyUserStats = pgView('legacy_user_stats', {
+  userId: integer('user_id'),
+  totalPosts: integer('total_posts'),
+  displayName: text('display_name'),
+}).existing();
+```
+
+<Note>
+  Use `.existing()` to tell Drizzle this view already exists and shouldn't be created during migrations.
+</Note>
+
+## PostgreSQL materialized views
+
+Materialized views store query results physically, improving performance for expensive queries:
+
+### Basic materialized view
+
+```typescript
+import { pgTable, pgMaterializedView, serial, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title'),
+  authorId: integer('author_id'),
+  views: integer('views').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const popularPosts = pgMaterializedView('popular_posts').as((qb) =>
+  qb.select({
+    id: posts.id,
+    title: posts.title,
+    views: posts.views,
+  })
+  .from(posts)
+  .where(sql`${posts.views} > 1000`)
+  .orderBy(desc(posts.views))
+);
+```
+
+### Materialized view with configuration
+
+```typescript
+import { pgMaterializedView, serial, text } from 'drizzle-orm/pg-core';
+
+export const cachedStats = pgMaterializedView('cached_stats', {
+  id: serial('id'),
+  name: text('name'),
+  count: integer('count'),
+})
+  .with({
+    fillfactor: 70,
+    autovacuumEnabled: true,
+  })
+  .tablespace('fast_storage')
+  .using('btree')
+  .as(sql`
+    SELECT id, name, COUNT(*) as count
+    FROM items
+    GROUP BY id, name
+  `);
+```
+
+### Materialized view without data
+
+Create the view structure without populating it:
+
+```typescript
+export const emptyStats = pgMaterializedView('empty_stats')
+  .withNoData()
+  .as((qb) => qb.select().from(posts));
+```
+
+<Note>
+  Use `withNoData()` to create the view structure quickly. Populate it later with `REFRESH MATERIALIZED VIEW`.
+</Note>
+
+### Refreshing materialized views
+
+Materialized views need manual refresh to update their data:
+
+```typescript
+import { db } from './db';
+import { sql } from 'drizzle-orm';
+
+// Refresh materialized view
+await db.execute(sql`REFRESH MATERIALIZED VIEW popular_posts`);
+
+// Concurrent refresh (doesn't block reads)
+await db.execute(sql`REFRESH MATERIALIZED VIEW CONCURRENTLY popular_posts`);
+```
+
+Or use the query builder:
+
+```typescript
+import { db } from './db';
+import { popularPosts } from './schema';
+
+// Refresh the view
+await db.refreshMaterializedView(popularPosts);
+
+// Concurrent refresh
+await db.refreshMaterializedView(popularPosts).concurrently();
+```
+
+## PostgreSQL view options
+
+### Security options
+
+```typescript
+import { pgView, text } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+export const secureView = pgView('secure_view', {
+  id: serial('id'),
+  email: text('email'),
+})
+  .with({
+    securityBarrier: true,
+    securityInvoker: true,
+  })
+  .as(sql`SELECT id, email FROM users WHERE active = true`);
+```
+
+<ParamField path="securityBarrier" type="boolean">
+  Prevents leaking data through user-defined functions in WHERE clauses
+</ParamField>
+
+<ParamField path="securityInvoker" type="boolean">
+  Executes view with the privileges of the user calling it, not the view owner
+</ParamField>
+
+### Check options
+
+```typescript
+import { pgView } from 'drizzle-orm/pg-core';
+
+export const activeUsers = pgView('active_users')
+  .with({
+    checkOption: 'cascaded', // or 'local'
+  })
+  .as((qb) => qb.select().from(users).where(eq(users.active, true)));
+```
+
+## Complete example
+
+```typescript
+import {
+  pgTable,
+  pgView,
+  pgMaterializedView,
+  serial,
+  text,
+  varchar,
+  integer,
+  timestamp,
+  boolean,
+} from 'drizzle-orm/pg-core';
+import { sql, eq, desc, and, gte } from 'drizzle-orm';
+
+// Tables
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: varchar('email', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content'),
+  authorId: integer('author_id').notNull(),
+  published: boolean('published').default(false),
+  views: integer('views').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const comments = pgTable('comments', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id').notNull(),
+  userId: integer('user_id').notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Standard view: Recent published posts with author info
+export const recentPublishedPosts = pgView('recent_published_posts').as((qb) =>
+  qb.select({
+    id: posts.id,
+    title: posts.title,
+    authorId: posts.authorId,
+    authorName: users.name,
+    authorEmail: users.email,
+    views: posts.views,
+    createdAt: posts.createdAt,
+  })
+  .from(posts)
+  .innerJoin(users, eq(posts.authorId, users.id))
+  .where(
+    and(
+      eq(posts.published, true),
+      gte(posts.createdAt, sql`NOW() - INTERVAL '30 days'`)
+    )
+  )
+  .orderBy(desc(posts.createdAt))
+);
+
+// SQL-based view: User statistics
+export const userStats = pgView('user_stats', {
+  userId: integer('user_id'),
+  userName: text('user_name'),
+  postCount: integer('post_count'),
+  commentCount: integer('comment_count'),
+  totalViews: integer('total_views'),
+}).as(sql`
+  SELECT 
+    u.id as user_id,
+    u.name as user_name,
+    COUNT(DISTINCT p.id) as post_count,
+    COUNT(DISTINCT c.id) as comment_count,
+    COALESCE(SUM(p.views), 0) as total_views
+  FROM users u
+  LEFT JOIN posts p ON u.id = p.author_id
+  LEFT JOIN comments c ON u.id = c.user_id
+  GROUP BY u.id, u.name
+`);
+
+// Materialized view: Popular posts (refreshed periodically)
+export const popularPosts = pgMaterializedView('popular_posts')
+  .with({
+    fillfactor: 70,
+  })
+  .as((qb) =>
+    qb.select({
+      id: posts.id,
+      title: posts.title,
+      authorName: users.name,
+      views: posts.views,
+      commentCount: sql<number>`COUNT(${comments.id})`.as('comment_count'),
+    })
+    .from(posts)
+    .innerJoin(users, eq(posts.authorId, users.id))
+    .leftJoin(comments, eq(posts.id, comments.postId))
+    .where(eq(posts.published, true))
+    .groupBy(posts.id, posts.title, users.name, posts.views)
+    .having(sql`COUNT(${comments.id}) > 10`)
+    .orderBy(desc(posts.views))
+  );
+```
+
+## When to use views
+
+<Steps>
+  <Step title="Simplify complex queries">
+    Encapsulate joins and filters into reusable views:
+    ```typescript
+    // Instead of repeating this join everywhere
+    const posts = await db.select()
+      .from(posts)
+      .innerJoin(users, eq(posts.authorId, users.id))
+      .where(eq(posts.published, true));
+    
+    // Use a view
+    const posts = await db.select().from(publishedPostsView);
+    ```
+  </Step>
+
+  <Step title="Improve security">
+    Expose only necessary columns through views:
+    ```typescript
+    export const publicUserInfo = pgView('public_user_info').as((qb) =>
+      qb.select({
+        id: users.id,
+        name: users.name,
+        // Email and password are hidden
+      }).from(users)
+    );
+    ```
+  </Step>
+
+  <Step title="Optimize performance with materialized views">
+    Cache expensive aggregations:
+    ```typescript
+    export const dashboardStats = pgMaterializedView('dashboard_stats')
+      .as((qb) => /* complex aggregation query */);
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Standard views don't improve performance - they're just stored queries. Use materialized views for performance gains, but remember they need manual refresh.
+</Warning>

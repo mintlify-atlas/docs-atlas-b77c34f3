@@ -1,0 +1,386 @@
+---
+title: SQLite Database
+description: Core SQLite database API for Drizzle ORM
+---
+
+## BaseSQLiteDatabase
+
+The core SQLite database class that provides all query builder methods and transaction support.
+
+### Type Parameters
+
+<ParamField path="TResultKind" type="'sync' | 'async'">
+  Determines whether the database operates in synchronous or asynchronous mode
+</ParamField>
+
+<ParamField path="TRunResult" type="any">
+  The return type for run operations (typically contains lastInsertRowid and changes)
+</ParamField>
+
+<ParamField path="TFullSchema" type="Record<string, unknown>">
+  The full schema definition including all tables and relations
+</ParamField>
+
+### Methods
+
+#### select()
+
+Creates a select query. Call with no arguments to select all columns, or pass a selection object to specify columns.
+
+```typescript
+select(): SQLiteSelectBuilder<undefined, TResultKind, TRunResult>
+select<TSelection extends SelectedFields>(
+  fields: TSelection
+): SQLiteSelectBuilder<TSelection, TResultKind, TRunResult>
+```
+
+<CodeGroup>
+```typescript All columns
+// Select all columns and all rows from the 'cars' table
+const allCars: Car[] = await db.select().from(cars);
+```
+
+```typescript Specific columns
+// Select specific columns
+const carsIdsAndBrands = await db.select({
+  id: cars.id,
+  brand: cars.brand
+}).from(cars);
+```
+
+```typescript With expressions
+// Select with SQL expressions
+const carsIdsAndLowerNames = await db.select({
+  id: cars.id,
+  lowerBrand: sql<string>`lower(${cars.brand})`,
+}).from(cars);
+```
+</CodeGroup>
+
+#### selectDistinct()
+
+Adds `DISTINCT` to the select query, returning only unique values.
+
+```typescript
+selectDistinct(): SQLiteSelectBuilder<undefined, TResultKind, TRunResult>
+selectDistinct<TSelection extends SelectedFields>(
+  fields: TSelection
+): SQLiteSelectBuilder<TSelection, TResultKind, TRunResult>
+```
+
+<CodeGroup>
+```typescript All unique rows
+await db.selectDistinct()
+  .from(cars)
+  .orderBy(cars.id, cars.brand, cars.color);
+```
+
+```typescript Unique brands
+await db.selectDistinct({ brand: cars.brand })
+  .from(cars)
+  .orderBy(cars.brand);
+```
+</CodeGroup>
+
+#### insert()
+
+Creates an insert query to add new rows to a table.
+
+```typescript
+insert<TTable extends SQLiteTable>(
+  into: TTable
+): SQLiteInsertBuilder<TTable, TResultKind, TRunResult>
+```
+
+<CodeGroup>
+```typescript Single row
+// Insert one row
+await db.insert(cars).values({ brand: 'BMW' });
+```
+
+```typescript Multiple rows
+// Insert multiple rows
+await db.insert(cars).values([
+  { brand: 'BMW' },
+  { brand: 'Porsche' }
+]);
+```
+
+```typescript With returning
+// Insert with returning clause
+const insertedCar = await db.insert(cars)
+  .values({ brand: 'BMW' })
+  .returning();
+```
+</CodeGroup>
+
+#### update()
+
+Creates an update query to modify existing rows. Use `.set()` to specify values and `.where()` to filter rows.
+
+```typescript
+update<TTable extends SQLiteTable>(
+  table: TTable
+): SQLiteUpdateBuilder<TTable, TResultKind, TRunResult>
+```
+
+<CodeGroup>
+```typescript Update all rows
+// Update all rows in the table
+await db.update(cars).set({ color: 'red' });
+```
+
+```typescript With filter
+// Update with WHERE clause
+await db.update(cars)
+  .set({ color: 'red' })
+  .where(eq(cars.brand, 'BMW'));
+```
+
+```typescript With returning
+// Update with returning clause
+const updatedCar = await db.update(cars)
+  .set({ color: 'red' })
+  .where(eq(cars.id, 1))
+  .returning();
+```
+</CodeGroup>
+
+#### delete()
+
+Creates a delete query to remove rows from a table.
+
+```typescript
+delete<TTable extends SQLiteTable>(
+  from: TTable
+): SQLiteDeleteBase<TTable, TResultKind, TRunResult>
+```
+
+<CodeGroup>
+```typescript Delete all rows
+// Delete all rows in the table
+await db.delete(cars);
+```
+
+```typescript With filter
+// Delete with WHERE clause
+await db.delete(cars).where(eq(cars.color, 'green'));
+```
+
+```typescript With returning
+// Delete with returning clause
+const deletedCar = await db.delete(cars)
+  .where(eq(cars.id, 1))
+  .returning();
+```
+</CodeGroup>
+
+#### $with()
+
+Creates a Common Table Expression (CTE) that can be referenced in subsequent queries.
+
+```typescript
+$with(alias: string): WithBuilder
+```
+
+<CodeGroup>
+```typescript Basic CTE
+// Create a CTE and use it in the select query
+const sq = db.$with('sq').as(
+  db.select().from(users).where(eq(users.id, 42))
+);
+
+const result = await db.with(sq).select().from(sq);
+```
+
+```typescript CTE with aliased SQL
+// CTE with aliased SQL expressions
+const sq = db.$with('sq').as(
+  db.select({
+    name: sql<string>`upper(${users.name})`.as('name'),
+  }).from(users)
+);
+
+const result = await db.with(sq)
+  .select({ name: sq.name })
+  .from(sq);
+```
+</CodeGroup>
+
+#### with()
+
+Incorporates previously defined CTEs into the main query.
+
+```typescript
+with(...queries: WithSubquery[]): {
+  select: Function;
+  selectDistinct: Function;
+  update: Function;
+  insert: Function;
+  delete: Function;
+}
+```
+
+```typescript
+const sq = db.$with('sq').as(
+  db.select().from(users).where(eq(users.id, 42))
+);
+
+const result = await db.with(sq).select().from(sq);
+```
+
+#### $count()
+
+Counts rows in a table or view with optional filtering.
+
+```typescript
+$count(
+  source: SQLiteTable | SQLiteViewBase | SQL | SQLWrapper,
+  filters?: SQL<unknown>
+): SQLiteCountBuilder
+```
+
+```typescript
+// Count all users
+const count = await db.$count(users);
+
+// Count with filter
+const activeCount = await db.$count(users, eq(users.active, true));
+```
+
+#### run()
+
+Executes a raw SQL query that doesn't return data (e.g., DDL statements).
+
+```typescript
+run(query: SQLWrapper | string): DBResult<TResultKind, TRunResult>
+```
+
+```typescript
+// Execute raw SQL
+await db.run(sql`CREATE INDEX idx_name ON users(name)`);
+
+// Execute string query
+await db.run('VACUUM');
+```
+
+#### all()
+
+Executes a query and returns all rows.
+
+```typescript
+all<T = unknown>(query: SQLWrapper | string): DBResult<TResultKind, T[]>
+```
+
+```typescript
+const rows = await db.all<{ id: number; name: string }>(
+  sql`SELECT id, name FROM users`
+);
+```
+
+#### get()
+
+Executes a query and returns the first row.
+
+```typescript
+get<T = unknown>(query: SQLWrapper | string): DBResult<TResultKind, T>
+```
+
+```typescript
+const user = await db.get<{ id: number; name: string }>(
+  sql`SELECT id, name FROM users WHERE id = 1`
+);
+```
+
+#### values()
+
+Executes a query and returns rows as arrays of values.
+
+```typescript
+values<T extends unknown[] = unknown[]>(
+  query: SQLWrapper | string
+): DBResult<TResultKind, T[]>
+```
+
+```typescript
+const rows = await db.values(
+  sql`SELECT id, name FROM users`
+);
+// [[1, 'Alice'], [2, 'Bob'], ...]
+```
+
+#### transaction()
+
+Executes a function within a database transaction.
+
+```typescript
+transaction<T>(
+  transaction: (tx: SQLiteTransaction<...>) => Result<TResultKind, T>,
+  config?: SQLiteTransactionConfig
+): Result<TResultKind, T>
+```
+
+<CodeGroup>
+```typescript Basic transaction
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'Alice' });
+  await tx.insert(posts).values({ userId: 1, title: 'Hello' });
+});
+```
+
+```typescript With rollback
+try {
+  await db.transaction(async (tx) => {
+    await tx.insert(users).values({ name: 'Bob' });
+    throw new Error('Rollback!');
+  });
+} catch (error) {
+  // Transaction rolled back
+}
+```
+</CodeGroup>
+
+## withReplicas()
+
+Configures a database instance to use read replicas for select queries.
+
+```typescript
+withReplicas<Q extends BaseSQLiteDatabase<...>>(
+  primary: Q,
+  replicas: [Q, ...Q[]],
+  getReplica?: (replicas: Q[]) => Q
+): SQLiteWithReplicas<Q>
+```
+
+<ParamField path="primary" type="BaseSQLiteDatabase" required>
+  The primary database instance for write operations
+</ParamField>
+
+<ParamField path="replicas" type="BaseSQLiteDatabase[]" required>
+  Array of replica database instances for read operations
+</ParamField>
+
+<ParamField path="getReplica" type="(replicas: Q[]) => Q">
+  Custom function to select a replica. Defaults to random selection
+</ParamField>
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { withReplicas } from 'drizzle-orm/sqlite-core';
+import Database from 'better-sqlite3';
+
+const primaryDb = drizzle(new Database('primary.db'));
+const replica1 = drizzle(new Database('replica1.db'));
+const replica2 = drizzle(new Database('replica2.db'));
+
+const db = withReplicas(primaryDb, [replica1, replica2]);
+
+// Reads go to replicas
+const users = await db.select().from(usersTable);
+
+// Writes go to primary
+await db.insert(usersTable).values({ name: 'Alice' });
+
+// Access primary explicitly
+await db.$primary.select().from(usersTable);
+```

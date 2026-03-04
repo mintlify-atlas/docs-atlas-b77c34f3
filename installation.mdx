@@ -1,0 +1,523 @@
+---
+title: "Installation"
+description: "Install Drizzle ORM and database drivers for your project"
+---
+
+## Quick installation
+
+Install Drizzle ORM and Drizzle Kit using your preferred package manager:
+
+<CodeGroup>
+```bash npm
+npm install drizzle-orm
+npm install -D drizzle-kit
+```
+
+```bash yarn
+yarn add drizzle-orm
+yarn add -D drizzle-kit
+```
+
+```bash pnpm
+pnpm add drizzle-orm
+pnpm add -D drizzle-kit
+```
+
+```bash bun
+bun add drizzle-orm
+bun add -D drizzle-kit
+```
+</CodeGroup>
+
+<Note>
+  **drizzle-orm**: The core ORM library for your application
+  
+  **drizzle-kit**: CLI companion for migrations and database management (dev dependency)
+</Note>
+
+## Database drivers
+
+Drizzle ORM requires a database driver to connect to your database. Install the driver that matches your database:
+
+### PostgreSQL drivers
+
+<Tabs>
+  <Tab title="node-postgres (pg)">
+    The most popular PostgreSQL driver for Node.js.
+
+    <CodeGroup>
+    ```bash npm
+    npm install pg
+    npm install -D @types/pg
+    ```
+
+    ```bash yarn
+    yarn add pg
+    yarn add -D @types/pg
+    ```
+
+    ```bash pnpm
+    pnpm add pg
+    pnpm add -D @types/pg
+    ```
+
+    ```bash bun
+    bun add pg
+    bun add -D @types/pg
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/node-postgres';
+    import { Pool } from 'pg';
+
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+
+    const db = drizzle(pool);
+    ```
+  </Tab>
+
+  <Tab title="postgres.js">
+    Fastest PostgreSQL driver for Node.js and Deno.
+
+    <CodeGroup>
+    ```bash npm
+    npm install postgres
+    ```
+
+    ```bash yarn
+    yarn add postgres
+    ```
+
+    ```bash pnpm
+    pnpm add postgres
+    ```
+
+    ```bash bun
+    bun add postgres
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/postgres-js';
+    import postgres from 'postgres';
+
+    const client = postgres(process.env.DATABASE_URL!);
+    const db = drizzle(client);
+    ```
+  </Tab>
+
+  <Tab title="Neon Serverless">
+    Optimized driver for Neon's serverless PostgreSQL.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @neondatabase/serverless
+    ```
+
+    ```bash yarn
+    yarn add @neondatabase/serverless
+    ```
+
+    ```bash pnpm
+    pnpm add @neondatabase/serverless
+    ```
+
+    ```bash bun
+    bun add @neondatabase/serverless
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/neon-serverless';
+    import { Pool } from '@neondatabase/serverless';
+
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const db = drizzle(pool);
+    ```
+  </Tab>
+
+  <Tab title="Vercel Postgres">
+    Vercel's PostgreSQL driver with edge runtime support.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @vercel/postgres
+    ```
+
+    ```bash yarn
+    yarn add @vercel/postgres
+    ```
+
+    ```bash pnpm
+    pnpm add @vercel/postgres
+    ```
+
+    ```bash bun
+    bun add @vercel/postgres
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/vercel-postgres';
+    import { sql } from '@vercel/postgres';
+
+    const db = drizzle(sql);
+    ```
+  </Tab>
+</Tabs>
+
+### MySQL drivers
+
+<Tabs>
+  <Tab title="mysql2">
+    Fast MySQL driver for Node.js with prepared statement support.
+
+    <CodeGroup>
+    ```bash npm
+    npm install mysql2
+    ```
+
+    ```bash yarn
+    yarn add mysql2
+    ```
+
+    ```bash pnpm
+    pnpm add mysql2
+    ```
+
+    ```bash bun
+    bun add mysql2
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/mysql2';
+    import mysql from 'mysql2/promise';
+
+    const connection = await mysql.createConnection({
+      host: 'localhost',
+      user: 'root',
+      database: 'mydb',
+    });
+
+    const db = drizzle(connection);
+    ```
+  </Tab>
+
+  <Tab title="PlanetScale">
+    Serverless MySQL driver for PlanetScale.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @planetscale/database
+    ```
+
+    ```bash yarn
+    yarn add @planetscale/database
+    ```
+
+    ```bash pnpm
+    pnpm add @planetscale/database
+    ```
+
+    ```bash bun
+    bun add @planetscale/database
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/planetscale-serverless';
+    import { Client } from '@planetscale/database';
+
+    const client = new Client({
+      url: process.env.DATABASE_URL,
+    });
+
+    const db = drizzle(client);
+    ```
+  </Tab>
+</Tabs>
+
+### SQLite drivers
+
+<Tabs>
+  <Tab title="better-sqlite3">
+    Fast synchronous SQLite driver for Node.js.
+
+    <CodeGroup>
+    ```bash npm
+    npm install better-sqlite3
+    npm install -D @types/better-sqlite3
+    ```
+
+    ```bash yarn
+    yarn add better-sqlite3
+    yarn add -D @types/better-sqlite3
+    ```
+
+    ```bash pnpm
+    pnpm add better-sqlite3
+    pnpm add -D @types/better-sqlite3
+    ```
+
+    ```bash bun
+    bun add better-sqlite3
+    bun add -D @types/better-sqlite3
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/better-sqlite3';
+    import Database from 'better-sqlite3';
+
+    const sqlite = new Database('sqlite.db');
+    const db = drizzle(sqlite);
+    ```
+  </Tab>
+
+  <Tab title="Bun SQLite">
+    Native SQLite support in Bun runtime.
+
+    <CodeGroup>
+    ```bash bun
+    bun add drizzle-orm
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/bun-sqlite';
+    import { Database } from 'bun:sqlite';
+
+    const sqlite = new Database('sqlite.db');
+    const db = drizzle(sqlite);
+    ```
+  </Tab>
+
+  <Tab title="Cloudflare D1">
+    SQLite for Cloudflare Workers.
+
+    <CodeGroup>
+    ```bash npm
+    npm install drizzle-orm
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/d1';
+
+    export default {
+      async fetch(request: Request, env: Env) {
+        const db = drizzle(env.DB);
+        // Use db here
+      },
+    };
+    ```
+  </Tab>
+
+  <Tab title="Turso (libSQL)">
+    Edge-hosted SQLite with libSQL.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @libsql/client
+    ```
+
+    ```bash yarn
+    yarn add @libsql/client
+    ```
+
+    ```bash pnpm
+    pnpm add @libsql/client
+    ```
+
+    ```bash bun
+    bun add @libsql/client
+    ```
+    </CodeGroup>
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/libsql';
+    import { createClient } from '@libsql/client';
+
+    const client = createClient({
+      url: process.env.TURSO_DATABASE_URL!,
+      authToken: process.env.TURSO_AUTH_TOKEN!,
+    });
+
+    const db = drizzle(client);
+    ```
+  </Tab>
+</Tabs>
+
+## Project setup
+
+After installing Drizzle ORM and your database driver, set up your project structure:
+
+<Steps>
+  <Step title="Create schema directory">
+    Create a directory for your database schema files:
+
+    ```bash
+    mkdir src/db
+    touch src/db/schema.ts
+    ```
+  </Step>
+
+  <Step title="Configure Drizzle Kit">
+    Create a `drizzle.config.ts` file in your project root:
+
+    <CodeGroup>
+    ```typescript PostgreSQL
+    import { defineConfig } from 'drizzle-kit';
+
+    export default defineConfig({
+      schema: './src/db/schema.ts',
+      out: './drizzle',
+      dialect: 'postgresql',
+      dbCredentials: {
+        url: process.env.DATABASE_URL!,
+      },
+    });
+    ```
+
+    ```typescript MySQL
+    import { defineConfig } from 'drizzle-kit';
+
+    export default defineConfig({
+      schema: './src/db/schema.ts',
+      out: './drizzle',
+      dialect: 'mysql',
+      dbCredentials: {
+        url: process.env.DATABASE_URL!,
+      },
+    });
+    ```
+
+    ```typescript SQLite
+    import { defineConfig } from 'drizzle-kit';
+
+    export default defineConfig({
+      schema: './src/db/schema.ts',
+      out: './drizzle',
+      dialect: 'sqlite',
+      dbCredentials: {
+        url: './sqlite.db',
+      },
+    });
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create a `.env` file with your database connection string:
+
+    ```bash .env
+    DATABASE_URL=postgresql://user:password@host:5432/database
+    ```
+
+    <Warning>
+      Never commit your `.env` file to version control. Add it to `.gitignore`.
+    </Warning>
+  </Step>
+</Steps>
+
+## Verify installation
+
+Create a simple test file to verify your installation:
+
+```typescript src/db/test.ts
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+// Define a simple schema
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+// Initialize database connection
+const db = drizzle(process.env.DATABASE_URL!);
+
+console.log('Drizzle ORM installed successfully!');
+```
+
+Run the test:
+
+```bash
+node --loader tsx src/db/test.ts
+```
+
+## Optional dependencies
+
+### TypeScript
+
+Drizzle works best with TypeScript. If you haven't installed it:
+
+<CodeGroup>
+```bash npm
+npm install -D typescript tsx @types/node
+```
+
+```bash yarn
+yarn add -D typescript tsx @types/node
+```
+
+```bash pnpm
+pnpm add -D typescript tsx @types/node
+```
+
+```bash bun
+bun add -D typescript @types/node
+```
+</CodeGroup>
+
+### Schema validation
+
+Integrate with runtime validation libraries:
+
+<Tabs>
+  <Tab title="Zod">
+    ```bash
+    npm install drizzle-zod zod
+    ```
+  </Tab>
+  <Tab title="Valibot">
+    ```bash
+    npm install drizzle-valibot valibot
+    ```
+  </Tab>
+  <Tab title="TypeBox">
+    ```bash
+    npm install drizzle-typebox @sinclair/typebox
+    ```
+  </Tab>
+  <Tab title="ArkType">
+    ```bash
+    npm install drizzle-arktype arktype
+    ```
+  </Tab>
+</Tabs>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first application with Drizzle ORM
+  </Card>
+  <Card title="Schema Declaration" icon="diagram-project" href="/core/schema-declaration">
+    Learn how to define your database schema
+  </Card>
+  <Card title="Database Connection" icon="plug" href="/core/database-connection">
+    Configure database connections for different drivers
+  </Card>
+  <Card title="Migrations" icon="code-branch" href="/core/migrations">
+    Set up database migrations with Drizzle Kit
+  </Card>
+</CardGroup>
+
+<Note>
+  **Having issues?** Check our [best practices guide](/guides/best-practices) or join our [Discord community](https://driz.link/discord) for help.
+</Note>

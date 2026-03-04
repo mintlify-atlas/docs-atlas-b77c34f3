@@ -1,0 +1,468 @@
+---
+title: CLI Commands
+description: Complete reference for all Drizzle Kit CLI commands including generate, migrate, push, pull, studio, and more.
+---
+
+Drizzle Kit provides a comprehensive CLI for managing database migrations and schema operations. All commands support both CLI flags and configuration file options.
+
+## Installation
+
+```bash
+npm install -D drizzle-kit
+```
+
+## Available Commands
+
+### generate
+
+Generate SQL migration files from your Drizzle schema.
+
+```bash
+drizzle-kit generate
+```
+
+<ParamField path="--dialect" type="string" required>
+  Database dialect: `postgresql`, `mysql`, `sqlite`, `turso`, or `singlestore`
+</ParamField>
+
+<ParamField path="--schema" type="string">
+  Path to schema file or folder. Can be a glob pattern.
+  
+  ```bash
+  drizzle-kit generate --schema=./src/schema.ts
+  drizzle-kit generate --schema=./src/schema/*
+  ```
+</ParamField>
+
+<ParamField path="--out" type="string" default="drizzle">
+  Output folder for migration files
+</ParamField>
+
+<ParamField path="--name" type="string">
+  Custom migration file name
+  
+  ```bash
+  drizzle-kit generate --name=add_users_table
+  ```
+</ParamField>
+
+<ParamField path="--custom" type="boolean" default={false}>
+  Generate an empty migration file for custom SQL
+  
+  ```bash
+  drizzle-kit generate --custom
+  ```
+</ParamField>
+
+<ParamField path="--breakpoints" type="boolean" default={true}>
+  Enable SQL statement breakpoints in generated migrations. Required for databases that don't support multiple DDL statements in one transaction (MySQL, SQLite, SingleStore).
+</ParamField>
+
+<ParamField path="--prefix" type="string" default="index">
+  Migration file prefix format
+  
+  Options: `index`, `timestamp`, `supabase`, `unix`, `none`
+  
+  ```bash
+  # Results in: 0001_migration.sql
+  drizzle-kit generate --prefix=index
+  
+  # Results in: 20240304120000_migration.sql  
+  drizzle-kit generate --prefix=timestamp
+  ```
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file (default: `drizzle.config.ts`)
+</ParamField>
+
+<ParamField path="--casing" type="string">
+  Column name casing for serialization: `camelCase` or `snake_case`
+</ParamField>
+
+<Note>
+  The `generate` command does not execute migrations - it only creates migration files. Use the `migrate` command to apply migrations to your database.
+</Note>
+
+---
+
+### migrate
+
+Apply pending migrations to your database.
+
+```bash
+drizzle-kit migrate
+```
+
+<ParamField path="--config" type="string">
+  Path to config file containing database credentials and migration settings
+</ParamField>
+
+<Note>
+  The `migrate` command requires database credentials to be configured in your `drizzle.config.ts` file. It reads migration files from the `out` directory and applies them in order.
+</Note>
+
+**How it works:**
+
+1. Reads migration files from the configured output directory (default: `drizzle`)
+2. Checks the migrations table to see which migrations have been applied
+3. Applies pending migrations in sequential order
+4. Records applied migrations in the migrations table
+
+**Configuration example:**
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/schema.ts',
+  out: './drizzle',
+  dbCredentials: {
+    url: process.env.DATABASE_URL,
+  },
+  migrations: {
+    table: 'migrations',
+    schema: 'public',
+  },
+});
+```
+
+---
+
+### push
+
+Push schema changes directly to the database without generating migration files.
+
+```bash
+drizzle-kit push
+```
+
+<ParamField path="--dialect" type="string" required>
+  Database dialect: `postgresql`, `mysql`, `sqlite`, `turso`, or `singlestore`
+</ParamField>
+
+<ParamField path="--schema" type="string" required>
+  Path to schema file or folder
+</ParamField>
+
+<ParamField path="--verbose" type="boolean" default={false}>
+  Print all SQL statements that will be executed
+</ParamField>
+
+<ParamField path="--strict" type="boolean" default={false}>
+  Always ask for confirmation before applying changes
+</ParamField>
+
+<ParamField path="--force" type="boolean" default={false}>
+  Auto-approve all data loss statements without confirmation
+  
+  <Warning>
+    Use with caution! This flag will automatically approve statements that may truncate tables or delete data.
+  </Warning>
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file
+</ParamField>
+
+**Database Credentials (CLI flags):**
+
+<ParamField path="--url" type="string">
+  Database connection URL
+  
+  ```bash
+  drizzle-kit push --url=postgresql://user:pass@host:5432/db
+  ```
+</ParamField>
+
+<ParamField path="--host" type="string">
+  Database host
+</ParamField>
+
+<ParamField path="--port" type="string">
+  Database port
+</ParamField>
+
+<ParamField path="--user" type="string">
+  Database user
+</ParamField>
+
+<ParamField path="--password" type="string">
+  Database password
+</ParamField>
+
+<ParamField path="--database" type="string">
+  Database name
+</ParamField>
+
+<ParamField path="--ssl" type="string">
+  SSL mode for PostgreSQL: `require`, `allow`, `prefer`, or `verify-full`
+</ParamField>
+
+<ParamField path="--auth-token" type="string">
+  Authentication token (for Turso)
+</ParamField>
+
+**Filtering Options:**
+
+<ParamField path="--tablesFilter" type="string">
+  Filter tables with glob patterns
+  
+  ```bash
+  drizzle-kit push --tablesFilter=users_*,posts_*
+  ```
+</ParamField>
+
+<ParamField path="--schemaFilters" type="string">
+  PostgreSQL schema name filters
+  
+  ```bash
+  drizzle-kit push --schemaFilters=public,custom
+  ```
+</ParamField>
+
+<Note>
+  The `push` command is ideal for prototyping and development. For production, use `generate` and `migrate` to maintain a history of schema changes.
+</Note>
+
+---
+
+### pull (introspect)
+
+Introspect an existing database and generate Drizzle schema.
+
+```bash
+drizzle-kit pull
+drizzle-kit introspect  # Alias
+```
+
+<ParamField path="--dialect" type="string" required>
+  Database dialect: `postgresql`, `mysql`, `sqlite`, `turso`, `singlestore`, or `gel`
+</ParamField>
+
+<ParamField path="--out" type="string" default="drizzle">
+  Output folder for generated schema files
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file
+</ParamField>
+
+<ParamField path="--introspect-casing" type="string" default="camel">
+  Casing format for generated schema: `camel` or `preserve`
+  
+  - `camel`: Converts snake_case to camelCase
+  - `preserve`: Keeps original database casing
+</ParamField>
+
+<ParamField path="--breakpoints" type="boolean" default={true}>
+  Generate migration files with breakpoints
+</ParamField>
+
+**Database credentials and filtering options are the same as the `push` command.**
+
+**Example:**
+
+```bash
+drizzle-kit pull --dialect=postgresql --url=$DATABASE_URL --out=./src/db/schema
+```
+
+This generates:
+- `schema.ts`: Complete Drizzle schema based on your database
+- `relations.ts`: Inferred relations between tables
+
+---
+
+### studio
+
+Launch Drizzle Studio - a visual database browser.
+
+```bash
+drizzle-kit studio
+```
+
+<ParamField path="--port" type="number" default={4983}>
+  Custom port for Drizzle Studio
+  
+  ```bash
+  drizzle-kit studio --port=3000
+  ```
+</ParamField>
+
+<ParamField path="--host" type="string" default="0.0.0.0">
+  Custom host for Drizzle Studio
+  
+  ```bash
+  drizzle-kit studio --host=localhost
+  ```
+</ParamField>
+
+<ParamField path="--verbose" type="boolean" default={false}>
+  Print all SQL statements executed by Studio
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file containing database credentials
+</ParamField>
+
+**Features:**
+- Browse and edit database records
+- Run queries
+- View table schemas and relationships
+- Real-time data updates
+
+Access Studio at `https://local.drizzle.studio`
+
+---
+
+### drop
+
+Remove a migration file and update the migration journal.
+
+```bash
+drizzle-kit drop
+```
+
+<ParamField path="--out" type="string" default="drizzle">
+  Migrations folder
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file
+</ParamField>
+
+<Warning>
+  This command only removes the migration file locally. It does not revert applied migrations from the database.
+</Warning>
+
+---
+
+### check
+
+Validate migration files and ensure consistency.
+
+```bash
+drizzle-kit check
+```
+
+<ParamField path="--dialect" type="string" required>
+  Database dialect
+</ParamField>
+
+<ParamField path="--out" type="string" default="drizzle">
+  Migrations folder
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file
+</ParamField>
+
+Validates:
+- Migration file syntax
+- Migration journal consistency
+- Schema snapshot integrity
+
+---
+
+### up
+
+Upgrade migration files to the latest Drizzle Kit format.
+
+```bash
+drizzle-kit up
+```
+
+<ParamField path="--dialect" type="string" required>
+  Database dialect
+</ParamField>
+
+<ParamField path="--out" type="string" default="drizzle">
+  Migrations folder
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file
+</ParamField>
+
+<Note>
+  This command upgrades migration metadata format when updating Drizzle Kit versions. It preserves your migration SQL while updating internal metadata.
+</Note>
+
+---
+
+### export
+
+Generate SQL diff between current schema and empty state.
+
+```bash
+drizzle-kit export
+```
+
+<ParamField path="--dialect" type="string" required>
+  Database dialect
+</ParamField>
+
+<ParamField path="--schema" type="string" required>
+  Path to schema file or folder
+</ParamField>
+
+<ParamField path="--sql" type="boolean" default={true}>
+  Generate output as SQL
+</ParamField>
+
+<ParamField path="--config" type="string">
+  Path to config file
+</ParamField>
+
+Generates a complete SQL file representing your entire schema without using migrations.
+
+---
+
+## Global Options
+
+All commands support:
+
+- `--config`: Specify custom config file path
+- Using environment variables through config file
+- Both CLI flags and config file (flags take precedence)
+
+## Exit Codes
+
+- `0`: Success
+- `1`: Error occurred
+
+## Examples
+
+### Complete workflow
+
+```bash
+# 1. Generate migration from schema changes
+drizzle-kit generate
+
+# 2. Review generated SQL in drizzle/ folder
+cat drizzle/0001_*.sql
+
+# 3. Apply migration to database
+drizzle-kit migrate
+
+# 4. Open Studio to verify changes
+drizzle-kit studio
+```
+
+### Quick prototyping
+
+```bash
+# Push changes directly without migration files
+drizzle-kit push --verbose
+```
+
+### Working with existing database
+
+```bash
+# Pull schema from database
+drizzle-kit pull --out=./src/schema
+
+# Generate initial migration
+drizzle-kit generate --name=init
+```

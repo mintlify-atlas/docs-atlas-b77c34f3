@@ -1,0 +1,425 @@
+---
+title: Indexes
+description: Create and optimize database indexes with Drizzle ORM for PostgreSQL, MySQL, and SQLite.
+---
+
+Indexes improve query performance by creating fast lookup structures on table columns. Drizzle supports standard and advanced index types across all databases.
+
+## Basic indexes
+
+### Single column index
+
+Create an index on a single column:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { pgTable, serial, varchar, index } from 'drizzle-orm/pg-core';
+
+    export const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+      email: varchar('email', { length: 255 }).notNull(),
+      username: varchar('username', { length: 50 }),
+    }, (table) => [
+      index('email_idx').on(table.email),
+      index('username_idx').on(table.username),
+    ]);
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { mysqlTable, serial, varchar, index } from 'drizzle-orm/mysql-core';
+
+    export const users = mysqlTable('users', {
+      id: serial('id').primaryKey(),
+      email: varchar('email', { length: 255 }).notNull(),
+      username: varchar('username', { length: 50 }),
+    }, (table) => [
+      index('email_idx').on(table.email),
+    ]);
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { sqliteTable, integer, text, index } from 'drizzle-orm/sqlite-core';
+
+    export const users = sqliteTable('users', {
+      id: integer('id').primaryKey(),
+      email: text('email').notNull(),
+      username: text('username'),
+    }, (table) => [
+      index('email_idx').on(table.email),
+    ]);
+    ```
+  </Tab>
+</Tabs>
+
+### Composite index
+
+Index multiple columns together for queries filtering on those columns:
+
+```typescript
+import { pgTable, serial, varchar, integer, timestamp, index } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  authorId: integer('author_id').notNull(),
+  status: varchar('status', { length: 20 }),
+  createdAt: timestamp('created_at').notNull(),
+}, (table) => [
+  index('author_status_idx').on(table.authorId, table.status),
+  index('author_created_idx').on(table.authorId, table.createdAt),
+]);
+```
+
+<Note>
+  Column order matters in composite indexes. Place the most selective columns first.
+</Note>
+
+### Auto-generated index names
+
+Omit the name to let Drizzle generate one:
+
+```typescript
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+}, (table) => [
+  index().on(table.email), // generates name like "users_email_idx"
+]);
+```
+
+## Unique indexes
+
+Create a unique index to enforce uniqueness and improve lookup performance:
+
+```typescript
+import { pgTable, serial, varchar, uniqueIndex } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  username: varchar('username', { length: 50 }),
+}, (table) => [
+  uniqueIndex('email_unique_idx').on(table.email),
+  uniqueIndex('username_unique_idx').on(table.username),
+]);
+```
+
+<Warning>
+  Unique indexes are different from unique constraints. Use `unique()` for constraints and `uniqueIndex()` for indexes.
+</Warning>
+
+## PostgreSQL-specific features
+
+### Index methods
+
+PostgreSQL supports multiple index methods:
+
+```typescript
+import { pgTable, serial, varchar, text, jsonb, index } from 'drizzle-orm/pg-core';
+
+export const documents = pgTable('documents', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }),
+  content: text('content'),
+  metadata: jsonb('metadata'),
+}, (table) => [
+  // B-tree (default) - good for equality and range queries
+  index('title_idx').using('btree', table.title),
+  
+  // Hash - only for equality comparisons
+  index('title_hash_idx').using('hash', table.title),
+  
+  // GIN - for full-text search and JSONB
+  index('metadata_idx').using('gin', table.metadata),
+  
+  // BRIN - for very large tables with natural ordering
+  index('id_brin_idx').using('brin', table.id),
+]);
+```
+
+Available methods:
+- `'btree'` - Default, good for most use cases
+- `'hash'` - Equality comparisons only
+- `'gin'` - JSON, arrays, full-text search
+- `'gist'` - Geometric data, full-text search
+- `'spgist'` - Space-partitioned data
+- `'brin'` - Block range indexes for large tables
+
+### Partial indexes
+
+Index only rows matching a condition:
+
+```typescript
+import { pgTable, serial, varchar, boolean, timestamp, index, sql } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }),
+  published: boolean('published').default(false),
+  deletedAt: timestamp('deleted_at'),
+}, (table) => [
+  // Index only published posts
+  index('published_posts_idx')
+    .on(table.title)
+    .where(sql`${table.published} = true`),
+  
+  // Index only non-deleted posts
+  index('active_posts_idx')
+    .on(table.title)
+    .where(sql`${table.deletedAt} IS NULL`),
+]);
+```
+
+### Concurrent index creation
+
+Create indexes without blocking writes:
+
+```typescript
+import { pgTable, serial, varchar, index } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+}, (table) => [
+  index('email_idx').on(table.email).concurrently(),
+]);
+```
+
+<Note>
+  Concurrent index creation takes longer but doesn't lock the table.
+</Note>
+
+### Index with storage parameters
+
+Specify storage parameters for fine-tuning:
+
+```typescript
+import { pgTable, serial, text, index } from 'drizzle-orm/pg-core';
+
+export const logs = pgTable('logs', {
+  id: serial('id').primaryKey(),
+  message: text('message'),
+}, (table) => [
+  index('message_idx')
+    .on(table.message)
+    .with({ fillfactor: 70 }),
+]);
+```
+
+### Expression indexes
+
+Index computed values:
+
+```typescript
+import { pgTable, serial, varchar, index, sql } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+  firstName: varchar('first_name', { length: 100 }),
+  lastName: varchar('last_name', { length: 100 }),
+}, (table) => [
+  // Index lowercase email for case-insensitive searches
+  index('email_lower_idx').on(sql`lower(${table.email})`),
+  
+  // Index full name
+  index('full_name_idx').on(sql`${table.firstName} || ' ' || ${table.lastName}`),
+]);
+```
+
+### pgvector indexes
+
+For vector similarity search with the pgvector extension:
+
+```typescript
+import { pgTable, serial, vector, index } from 'drizzle-orm/pg-core';
+
+export const embeddings = pgTable('embeddings', {
+  id: serial('id').primaryKey(),
+  embedding: vector('embedding', { dimensions: 1536 }),
+}, (table) => [
+  // HNSW index for fast approximate search
+  index('embedding_idx')
+    .using('hnsw', table.embedding.op('vector_cosine_ops'))
+    .with({ m: 16, ef_construction: 64 }),
+  
+  // IVFFlat index
+  index('embedding_ivfflat_idx')
+    .using('ivfflat', table.embedding.op('vector_l2_ops'))
+    .with({ lists: 100 }),
+]);
+```
+
+### Operator classes
+
+Specify how columns should be indexed:
+
+```typescript
+import { pgTable, serial, text, index } from 'drizzle-orm/pg-core';
+
+export const documents = pgTable('documents', {
+  id: serial('id').primaryKey(),
+  title: text('title'),
+}, (table) => [
+  // Use text_pattern_ops for LIKE queries
+  index('title_pattern_idx').on(table.title.op('text_pattern_ops')),
+]);
+```
+
+## MySQL-specific features
+
+### Index types
+
+```typescript
+import { mysqlTable, serial, varchar, text, index } from 'drizzle-orm/mysql-core';
+
+export const articles = mysqlTable('articles', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }),
+  content: text('content'),
+}, (table) => [
+  // BTREE (default)
+  index('title_idx').on(table.title).using('btree'),
+  
+  // HASH
+  index('title_hash_idx').on(table.title).using('hash'),
+  
+  // FULLTEXT for full-text search
+  index('content_fulltext_idx').on(table.content).using('fulltext'),
+]);
+```
+
+### Index length prefix
+
+For long text columns, index only a prefix:
+
+```typescript
+import { mysqlTable, serial, text, index } from 'drizzle-orm/mysql-core';
+
+export const posts = mysqlTable('posts', {
+  id: serial('id').primaryKey(),
+  content: text('content'),
+}, (table) => [
+  // Index first 100 characters
+  index('content_prefix_idx').on(table.content.op('100')),
+]);
+```
+
+## SQLite-specific features
+
+### Partial indexes
+
+```typescript
+import { sqliteTable, integer, text, index, sql } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey(),
+  email: text('email'),
+  deletedAt: integer('deleted_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('active_users_idx')
+    .on(table.email)
+    .where(sql`${table.deletedAt} IS NULL`),
+]);
+```
+
+### Expression indexes
+
+```typescript
+import { sqliteTable, integer, text, index, sql } from 'drizzle-orm/sqlite-core';
+
+export const users = sqliteTable('users', {
+  id: integer('id').primaryKey(),
+  email: text('email'),
+}, (table) => [
+  index('email_lower_idx').on(sql`lower(${table.email})`),
+]);
+```
+
+## Performance tips
+
+<Steps>
+  <Step title="Index columns used in WHERE clauses">
+    Create indexes on columns frequently used for filtering:
+    ```typescript
+    index('status_idx').on(table.status)
+    ```
+  </Step>
+
+  <Step title="Use composite indexes wisely">
+    Put the most selective column first in composite indexes:
+    ```typescript
+    // Good: userId is more selective than status
+    index().on(table.userId, table.status)
+    ```
+  </Step>
+
+  <Step title="Consider partial indexes">
+    Index only the data you query:
+    ```typescript
+    index().on(table.email).where(sql`${table.active} = true`)
+    ```
+  </Step>
+
+  <Step title="Don't over-index">
+    Each index adds overhead to INSERT/UPDATE operations. Only create indexes you need.
+  </Step>
+
+  <Step title="Monitor index usage">
+    Use database tools to identify unused indexes and remove them.
+  </Step>
+</Steps>
+
+## Complete example
+
+```typescript
+import {
+  pgTable,
+  serial,
+  varchar,
+  text,
+  integer,
+  timestamp,
+  boolean,
+  jsonb,
+  index,
+  uniqueIndex,
+  sql,
+} from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 255 }).notNull(),
+  content: text('content'),
+  authorId: integer('author_id').notNull(),
+  status: varchar('status', { length: 20 }).notNull(),
+  tags: jsonb('tags').$type<string[]>(),
+  published: boolean('published').default(false),
+  publishedAt: timestamp('published_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  // Unique index on slug
+  uniqueIndex('slug_unique_idx').on(table.slug),
+  
+  // Composite index for common query pattern
+  index('author_status_idx').on(table.authorId, table.status),
+  
+  // Partial index for published posts
+  index('published_posts_idx')
+    .on(table.publishedAt)
+    .where(sql`${table.published} = true`),
+  
+  // GIN index for JSONB tags
+  index('tags_idx').using('gin', table.tags),
+  
+  // Expression index for case-insensitive title search
+  index('title_lower_idx').on(sql`lower(${table.title})`),
+  
+  // Concurrent index creation for production
+  index('created_at_idx').on(table.createdAt).concurrently(),
+]);
+```

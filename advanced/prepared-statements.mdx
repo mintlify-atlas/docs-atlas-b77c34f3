@@ -1,0 +1,586 @@
+---
+title: Prepared Statements
+description: Optimize query performance and security with prepared statements and parameter placeholders
+---
+
+## Overview
+
+Prepared statements allow you to define a query once and execute it multiple times with different parameters. This approach provides:
+
+- **Performance**: Query planning happens once, not on every execution
+- **Security**: Protection against SQL injection through parameterization
+- **Reusability**: Define complex queries once, reuse with different values
+- **Type Safety**: Full TypeScript inference for parameters and results
+
+## Basic Usage
+
+### Creating a Prepared Statement
+
+Use the `.prepare()` method to create a reusable query:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { users } from './schema';
+
+const db = drizzle(client);
+
+// Define the prepared statement
+const getUserById = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Execute with different values
+const user1 = await getUserById.execute({ id: 1 });
+const user2 = await getUserById.execute({ id: 2 });
+const user3 = await getUserById.execute({ id: 3 });
+```
+
+### Named Statements
+
+Provide a unique name to your prepared statements:
+
+```typescript
+const statement = db
+  .select({
+    id: users.id,
+    name: users.name,
+  })
+  .from(users)
+  .prepare('list_users');
+
+const result = await statement.execute();
+```
+
+<Note>
+The statement name is used by the database driver for caching. Use descriptive names that identify the query's purpose.
+</Note>
+
+## Using Placeholders
+
+### SQL Placeholder Function
+
+The `sql.placeholder()` function creates named parameters:
+
+```typescript
+import { sql, placeholder } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+
+const insertUser = db
+  .insert(users)
+  .values({
+    name: placeholder('name'),
+    email: placeholder('email'),
+    age: placeholder('age'),
+  })
+  .prepare('insert_user');
+
+await insertUser.execute({
+  name: 'John Doe',
+  email: 'john@example.com',
+  age: 30,
+});
+
+await insertUser.execute({
+  name: 'Jane Smith',
+  email: 'jane@example.com',
+  age: 28,
+});
+```
+
+### Placeholders in WHERE Clauses
+
+Use placeholders for dynamic filtering:
+
+```typescript
+const searchUsers = db
+  .select()
+  .from(users)
+  .where(eq(users.name, placeholder('searchName')))
+  .prepare('search_users');
+
+const johns = await searchUsers.execute({ searchName: 'John' });
+const janes = await searchUsers.execute({ searchName: 'Jane' });
+```
+
+### Multiple Placeholders
+
+Combine multiple placeholders in complex queries:
+
+```typescript
+import { and, gte, lte } from 'drizzle-orm';
+
+const getUsersInAgeRange = db
+  .select()
+  .from(users)
+  .where(
+    and(
+      gte(users.age, placeholder('minAge')),
+      lte(users.age, placeholder('maxAge'))
+    )
+  )
+  .prepare('users_by_age_range');
+
+const youngAdults = await getUsersInAgeRange.execute({
+  minAge: 18,
+  maxAge: 25,
+});
+
+const middleAged = await getUsersInAgeRange.execute({
+  minAge: 35,
+  maxAge: 50,
+});
+```
+
+## Advanced Patterns
+
+### Placeholders in LIMIT and OFFSET
+
+Create reusable pagination queries:
+
+```typescript
+const paginateUsers = db
+  .select()
+  .from(users)
+  .limit(placeholder('limit'))
+  .offset(placeholder('offset'))
+  .prepare('paginate_users');
+
+// Page 1
+const page1 = await paginateUsers.execute({ limit: 10, offset: 0 });
+
+// Page 2
+const page2 = await paginateUsers.execute({ limit: 10, offset: 10 });
+
+// Page 3
+const page3 = await paginateUsers.execute({ limit: 10, offset: 20 });
+```
+
+### Complex Prepared Statements
+
+Combine with joins and multiple conditions:
+
+```typescript
+import { posts } from './schema';
+
+const getUserPostsInDateRange = db
+  .select({
+    userName: users.name,
+    postContent: posts.content,
+    postDate: posts.createdAt,
+  })
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.ownerId))
+  .where(
+    and(
+      eq(users.id, placeholder('userId')),
+      gte(posts.createdAt, placeholder('startDate')),
+      lte(posts.createdAt, placeholder('endDate'))
+    )
+  )
+  .prepare('user_posts_date_range');
+
+const result = await getUserPostsInDateRange.execute({
+  userId: 1,
+  startDate: new Date('2024-01-01'),
+  endDate: new Date('2024-12-31'),
+});
+```
+
+### Update with Placeholders
+
+Prepare dynamic update statements:
+
+```typescript
+const updateUserEmail = db
+  .update(users)
+  .set({
+    email: placeholder('newEmail'),
+    updatedAt: sql`now()`,
+  })
+  .where(eq(users.id, placeholder('userId')))
+  .prepare('update_user_email');
+
+await updateUserEmail.execute({
+  userId: 1,
+  newEmail: 'newemail@example.com',
+});
+```
+
+### Delete with Placeholders
+
+Create reusable delete operations:
+
+```typescript
+const deleteUserById = db
+  .delete(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('delete_user');
+
+await deleteUserById.execute({ id: 1 });
+await deleteUserById.execute({ id: 2 });
+```
+
+## Database-Specific Features
+
+### PostgreSQL
+
+PostgreSQL prepared statements use positional parameters internally:
+
+```typescript
+// Drizzle handles the conversion from named to positional parameters
+const stmt = db
+  .select()
+  .from(users)
+  .where(
+    and(
+      eq(users.name, placeholder('name')),
+      eq(users.email, placeholder('email'))
+    )
+  )
+  .prepare('find_user');
+
+// Generates SQL like: SELECT * FROM users WHERE name = $1 AND email = $2
+const result = await stmt.execute({
+  name: 'John',
+  email: 'john@example.com',
+});
+```
+
+### MySQL
+
+MySQL prepared statements use `?` placeholders:
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import { mysqlTable, int, varchar } from 'drizzle-orm/mysql-core';
+
+const users = mysqlTable('users', {
+  id: int('id').primaryKey(),
+  name: varchar('name', { length: 255 }),
+});
+
+const stmt = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user');
+
+const result = await stmt.execute({ id: 1 });
+```
+
+### SQLite
+
+SQLite supports both named and positional parameters:
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('sqlite.db');
+const db = drizzle(sqlite);
+
+const stmt = db
+  .select()
+  .from(users)
+  .where(eq(users.name, placeholder('name')))
+  .prepare('find_user');
+
+const result = stmt.execute({ name: 'John' });
+```
+
+## Performance Benefits
+
+### Execution Time Comparison
+
+<CodeGroup>
+
+```typescript Without Prepared Statements
+// Query planning happens every time
+for (let i = 0; i < 1000; i++) {
+  await db.select().from(users).where(eq(users.id, i));
+}
+// Total time: ~500ms
+```
+
+```typescript With Prepared Statements
+// Query planning happens once
+const stmt = db
+  .select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user');
+
+for (let i = 0; i < 1000; i++) {
+  await stmt.execute({ id: i });
+}
+// Total time: ~200ms (60% faster)
+```
+
+</CodeGroup>
+
+<Tip>
+For queries executed more than once, prepared statements can reduce execution time by 30-60% by avoiding repeated query planning.
+</Tip>
+
+### When to Use Prepared Statements
+
+<Steps>
+  <Step title="Repeated queries with different parameters">
+    Bulk operations, pagination, or search functionality.
+  </Step>
+  
+  <Step title="Performance-critical paths">
+    Hot code paths where every millisecond counts.
+  </Step>
+  
+  <Step title="User input handling">
+    Any query that includes user-provided values for security.
+  </Step>
+  
+  <Step title="Batch operations">
+    Processing large datasets with similar query patterns.
+  </Step>
+</Steps>
+
+## Type Safety
+
+Prepared statements maintain full type inference:
+
+```typescript
+const getUserWithEmail = db
+  .select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+  })
+  .from(users)
+  .where(eq(users.id, placeholder('userId')))
+  .prepare('get_user_with_email');
+
+// TypeScript knows the parameter type
+const result = await getUserWithEmail.execute({
+  userId: 1, // Must be a number
+  // userId: '1', // TypeScript error: Type 'string' is not assignable to type 'number'
+});
+
+// TypeScript knows the return type
+result.forEach(user => {
+  console.log(user.id);    // number
+  console.log(user.name);  // string
+  console.log(user.email); // string
+  // console.log(user.age); // TypeScript error: Property 'age' does not exist
+});
+```
+
+## Security Considerations
+
+### SQL Injection Prevention
+
+Prepared statements automatically escape parameters:
+
+```typescript
+// ✓ SAFE: Parameters are properly escaped
+const stmt = db
+  .select()
+  .from(users)
+  .where(eq(users.name, placeholder('name')))
+  .prepare('find_user');
+
+// Even with malicious input, SQL injection is prevented
+await stmt.execute({ name: "admin' OR '1'='1" });
+// Safely searches for the literal string "admin' OR '1'='1"
+```
+
+<Warning>
+Never concatenate user input directly into SQL strings, even when using prepared statements. Always use placeholders for dynamic values.
+</Warning>
+
+### Safe vs Unsafe Patterns
+
+<CodeGroup>
+
+```typescript Safe Pattern
+const stmt = db
+  .select()
+  .from(users)
+  .where(eq(users.email, placeholder('email')))
+  .prepare('find_by_email');
+
+await stmt.execute({ email: userInput });
+```
+
+```typescript Unsafe Pattern (Don't do this!)
+const email = userInput;
+const stmt = db
+  .select()
+  .from(users)
+  .where(sql`email = '${email}'`) // ✗ Vulnerable to SQL injection!
+  .prepare('bad_query');
+
+await stmt.execute();
+```
+
+</CodeGroup>
+
+## Common Pitfalls
+
+### Statement Caching
+
+<Warning>
+Prepared statement names must be unique across your application. Reusing names can cause unexpected behavior.
+</Warning>
+
+```typescript
+// ✗ BAD: Same name for different queries
+function getUser(includeEmail: boolean) {
+  if (includeEmail) {
+    return db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .prepare('get_user'); // Same name!
+  }
+  return db
+    .select({ id: users.id })
+    .from(users)
+    .prepare('get_user'); // Same name!
+}
+
+// ✓ GOOD: Unique names for each query
+function getUser(includeEmail: boolean) {
+  if (includeEmail) {
+    return db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .prepare('get_user_with_email');
+  }
+  return db
+    .select({ id: users.id })
+    .from(users)
+    .prepare('get_user_basic');
+}
+```
+
+### Optional Parameters
+
+Handle optional placeholders carefully:
+
+```typescript
+// For optional filters, build the query conditionally
+function searchUsers(name?: string, email?: string) {
+  let query = db.select().from(users);
+  
+  const conditions = [];
+  const params: Record<string, any> = {};
+  
+  if (name !== undefined) {
+    conditions.push(eq(users.name, placeholder('name')));
+    params.name = name;
+  }
+  
+  if (email !== undefined) {
+    conditions.push(eq(users.email, placeholder('email')));
+    params.email = email;
+  }
+  
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions));
+  }
+  
+  return query.prepare('search_users').execute(params);
+}
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use descriptive statement names">
+    Name your statements clearly: `get_user_by_email` not `stmt1`.
+  </Step>
+  
+  <Step title="Prepare statements outside loops">
+    Create prepared statements once, then execute multiple times.
+  </Step>
+  
+  <Step title="Use placeholders for all dynamic values">
+    Never interpolate user input directly into SQL.
+  </Step>
+  
+  <Step title="Consider transaction context">
+    Prepared statements work within transactions for consistent performance.
+  </Step>
+  
+  <Step title="Profile before optimizing">
+    Measure query performance before converting all queries to prepared statements.
+  </Step>
+</Steps>
+
+## Real-World Example
+
+Here's a complete example of using prepared statements in an API endpoint:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { eq, and, gte, lte, placeholder } from 'drizzle-orm';
+import { users, posts } from './schema';
+
+const db = drizzle(client);
+
+// Prepare statements once at application startup
+const statements = {
+  getUserById: db
+    .select()
+    .from(users)
+    .where(eq(users.id, placeholder('id')))
+    .prepare('get_user_by_id'),
+    
+  getUserPosts: db
+    .select()
+    .from(posts)
+    .where(
+      and(
+        eq(posts.ownerId, placeholder('userId')),
+        gte(posts.createdAt, placeholder('startDate')),
+        lte(posts.createdAt, placeholder('endDate'))
+      )
+    )
+    .orderBy(desc(posts.createdAt))
+    .limit(placeholder('limit'))
+    .prepare('get_user_posts'),
+    
+  updateUserLastSeen: db
+    .update(users)
+    .set({ lastSeenAt: sql`now()` })
+    .where(eq(users.id, placeholder('userId')))
+    .prepare('update_last_seen'),
+};
+
+// Use in API handlers
+async function handleGetUserPosts(req, res) {
+  const userId = parseInt(req.params.userId);
+  const startDate = new Date(req.query.start);
+  const endDate = new Date(req.query.end);
+  const limit = parseInt(req.query.limit) || 20;
+
+  // Execute prepared statements with request parameters
+  const [user, posts] = await Promise.all([
+    statements.getUserById.execute({ id: userId }),
+    statements.getUserPosts.execute({
+      userId,
+      startDate,
+      endDate,
+      limit,
+    }),
+  ]);
+  
+  // Update last seen
+  await statements.updateUserLastSeen.execute({ userId });
+
+  res.json({ user, posts });
+}
+```
+
+<Tip>
+Organize your prepared statements in a dedicated module and export them for reuse across your application.
+</Tip>

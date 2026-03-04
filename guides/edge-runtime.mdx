@@ -1,0 +1,642 @@
+---
+title: "Edge Runtime Compatibility"
+description: "Deploy Drizzle ORM to edge networks for global low-latency database access"
+---
+
+Drizzle ORM is designed to work seamlessly in edge runtime environments, enabling you to run database queries close to your users anywhere in the world.
+
+## What is Edge Runtime?
+
+Edge runtimes are JavaScript environments that run on globally distributed networks (CDNs), providing:
+
+- **Low latency**: Code executes geographically close to users
+- **Global distribution**: Deploy to 200+ locations worldwide
+- **Instant cold starts**: Sub-50ms initialization times
+- **Cost efficiency**: Pay only for actual execution time
+- **Auto-scaling**: Handle millions of requests automatically
+
+## Supported Edge Platforms
+
+Drizzle works with all major edge platforms:
+
+<CardGroup cols={2}>
+
+<Card title="Cloudflare Workers" icon="cloud" href="#cloudflare-workers">
+  Deploy to 300+ cities with D1 SQLite database
+</Card>
+
+<Card title="Vercel Edge Functions" icon="triangle" href="#vercel-edge-functions">
+  Serverless functions with edge caching
+</Card>
+
+<Card title="Deno Deploy" icon="deno" href="#deno-deploy">
+  Edge runtime with native TypeScript support
+</Card>
+
+<Card title="Netlify Edge Functions" icon="netlify" href="#netlify-edge-functions">
+  Edge functions powered by Deno
+</Card>
+
+</CardGroup>
+
+## Edge Runtime Constraints
+
+Edge environments have specific limitations you must understand:
+
+<Warning>
+**No TCP Connections**: Traditional database drivers using TCP (like `pg`, `mysql2`) don't work in edge runtimes. Use HTTP-based drivers instead.
+</Warning>
+
+<Note>
+**Limited APIs**: Node.js APIs like `fs`, `net`, and `child_process` are not available. Drizzle's edge-compatible drivers avoid these dependencies.
+</Note>
+
+### Compatible Database Drivers
+
+| Database | Edge Driver | Package |
+|----------|-------------|----------|
+| PostgreSQL | Neon HTTP | `drizzle-orm/neon-http` |
+| PostgreSQL | Vercel Postgres | `drizzle-orm/vercel-postgres` |
+| MySQL | PlanetScale | `drizzle-orm/planetscale-serverless` |
+| SQLite | Cloudflare D1 | `drizzle-orm/d1` |
+| SQLite | Turso | `drizzle-orm/libsql` |
+
+## Cloudflare Workers
+
+Cloudflare Workers run on one of the world's largest edge networks with 300+ data centers.
+
+### Cloudflare D1 (SQLite)
+
+D1 is Cloudflare's serverless SQLite database, globally replicated to all edge locations.
+
+<Steps>
+
+<Step title="Install dependencies">
+  ```bash
+  npm install drizzle-orm
+  npm install -D drizzle-kit
+  ```
+  
+  <Note>D1 types are included in `@cloudflare/workers-types`</Note>
+</Step>
+
+<Step title="Define your schema">
+  ```typescript schema.ts
+  import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+  
+  export const users = sqliteTable('users', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    email: text('email').notNull().unique(),
+  });
+  
+  export const posts = sqliteTable('posts', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    title: text('title').notNull(),
+    content: text('content'),
+    userId: integer('user_id').notNull().references(() => users.id),
+  });
+  ```
+</Step>
+
+<Step title="Configure Drizzle Kit">
+  ```typescript drizzle.config.ts
+  import { defineConfig } from 'drizzle-kit';
+  
+  export default defineConfig({
+    schema: './src/schema.ts',
+    out: './drizzle',
+    dialect: 'sqlite',
+    driver: 'd1-http',
+    dbCredentials: {
+      accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+      databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+      token: process.env.CLOUDFLARE_API_TOKEN!,
+    },
+  });
+  ```
+</Step>
+
+<Step title="Create your Worker">
+  ```typescript src/index.ts
+  import { drizzle } from 'drizzle-orm/d1';
+  import { users, posts } from './schema';
+  
+  export interface Env {
+    DB: D1Database;
+  }
+  
+  export default {
+    async fetch(request: Request, env: Env): Promise<Response> {
+      const db = drizzle(env.DB);
+      
+      // Query the database
+      const allUsers = await db.select().from(users);
+      
+      return Response.json(allUsers);
+    },
+  };
+  ```
+</Step>
+
+<Step title="Configure wrangler.toml">
+  ```toml wrangler.toml
+  name = "my-worker"
+  main = "src/index.ts"
+  compatibility_date = "2024-01-01"
+  
+  [[d1_databases]]
+  binding = "DB"
+  database_name = "my-database"
+  database_id = "your-database-id"
+  ```
+</Step>
+
+<Step title="Generate and apply migrations">
+  ```bash
+  # Generate migration files
+  npx drizzle-kit generate
+  
+  # Apply migrations to D1
+  npx wrangler d1 migrations apply my-database
+  ```
+</Step>
+
+</Steps>
+
+### D1 Batch Operations
+
+D1 supports efficient batch queries to reduce latency:
+
+```typescript
+import { drizzle } from 'drizzle-orm/d1';
+
+const db = drizzle(env.DB);
+
+// Execute multiple queries in one round trip
+const [usersResult, postsResult] = await db.batch([
+  db.select().from(users),
+  db.select().from(posts).limit(10),
+]);
+```
+
+### D1 Transactions
+
+```typescript
+await db.transaction(async (tx) => {
+  const user = await tx.insert(users)
+    .values({ name: 'John', email: 'john@example.com' })
+    .returning();
+  
+  await tx.insert(posts).values({
+    title: 'First Post',
+    userId: user[0].id,
+  });
+});
+```
+
+### Connecting to External Databases
+
+For PostgreSQL or MySQL, use HTTP-based drivers:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+
+export interface Env {
+  DATABASE_URL: string;
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const db = drizzle({ connection: env.DATABASE_URL });
+    
+    const users = await db.select().from(usersTable);
+    return Response.json(users);
+  },
+};
+```
+
+## Vercel Edge Functions
+
+Vercel Edge Functions run on the Vercel Edge Network using the V8 runtime.
+
+### Setup with Vercel Postgres
+
+<Steps>
+
+<Step title="Create Vercel Postgres database">
+  In your Vercel project dashboard:
+  1. Go to Storage tab
+  2. Create new Postgres database
+  3. Environment variables are auto-injected
+</Step>
+
+<Step title="Install dependencies">
+  ```bash
+  npm install drizzle-orm @vercel/postgres
+  npm install -D drizzle-kit
+  ```
+</Step>
+
+<Step title="Create edge API route">
+  ```typescript app/api/users/route.ts
+  import { drizzle } from 'drizzle-orm/vercel-postgres';
+  import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+  
+  export const runtime = 'edge';
+  
+  export const users = pgTable('users', {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+  });
+  
+  export async function GET() {
+    const db = drizzle();
+    const allUsers = await db.select().from(users);
+    
+    return Response.json(allUsers);
+  }
+  
+  export async function POST(request: Request) {
+    const db = drizzle();
+    const body = await request.json();
+    
+    const newUser = await db.insert(users)
+      .values({ name: body.name })
+      .returning();
+    
+    return Response.json(newUser[0]);
+  }
+  ```
+</Step>
+
+</Steps>
+
+### Edge Middleware Example
+
+```typescript middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import { users } from './schema';
+import { eq } from 'drizzle-orm';
+
+export const config = {
+  matcher: '/api/:path*',
+};
+
+export async function middleware(request: NextRequest) {
+  const apiKey = request.headers.get('x-api-key');
+  
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: 'API key required' },
+      { status: 401 }
+    );
+  }
+  
+  // Validate API key against database
+  const db = drizzle();
+  const user = await db.select()
+    .from(users)
+    .where(eq(users.apiKey, apiKey))
+    .limit(1);
+  
+  if (user.length === 0) {
+    return NextResponse.json(
+      { error: 'Invalid API key' },
+      { status: 401 }
+    );
+  }
+  
+  // Add user info to request headers
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-user-id', user[0].id.toString());
+  
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
+}
+```
+
+### Using with Neon
+
+```typescript app/api/posts/route.ts
+import { drizzle } from 'drizzle-orm/neon-http';
+import { posts } from '@/schema';
+
+export const runtime = 'edge';
+
+export async function GET() {
+  const db = drizzle({ 
+    connection: process.env.DATABASE_URL! 
+  });
+  
+  const allPosts = await db.select().from(posts);
+  return Response.json(allPosts);
+}
+```
+
+## Deno Deploy
+
+Deno Deploy is a globally distributed edge runtime with native TypeScript support.
+
+### PostgreSQL with Neon
+
+```typescript main.ts
+import { drizzle } from 'npm:drizzle-orm/neon-http';
+import { neon } from 'npm:@neondatabase/serverless';
+import { pgTable, serial, text } from 'npm:drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+const sql = neon(Deno.env.get('DATABASE_URL')!);
+const db = drizzle(sql);
+
+Deno.serve(async (req) => {
+  const url = new URL(req.url);
+  
+  if (url.pathname === '/users') {
+    const allUsers = await db.select().from(users);
+    return Response.json(allUsers);
+  }
+  
+  return new Response('Not found', { status: 404 });
+});
+```
+
+### SQLite with Turso
+
+```typescript
+import { drizzle } from 'npm:drizzle-orm/libsql';
+import { createClient } from 'npm:@libsql/client';
+
+const client = createClient({
+  url: Deno.env.get('TURSO_DATABASE_URL')!,
+  authToken: Deno.env.get('TURSO_AUTH_TOKEN')!,
+});
+
+const db = drizzle(client);
+
+Deno.serve(async () => {
+  const users = await db.select().from(usersTable);
+  return Response.json(users);
+});
+```
+
+## Netlify Edge Functions
+
+Netlify Edge Functions use Deno runtime and work similarly to Deno Deploy.
+
+```typescript netlify/edge-functions/users.ts
+import { drizzle } from 'npm:drizzle-orm/neon-http';
+import { users } from '../../schema.ts';
+
+export default async () => {
+  const db = drizzle({ 
+    connection: Deno.env.get('DATABASE_URL')! 
+  });
+  
+  const allUsers = await db.select().from(users);
+  
+  return Response.json(allUsers);
+};
+
+export const config = { path: '/api/users' };
+```
+
+## Performance Optimization
+
+### Minimize Round Trips
+
+Use batch queries when possible:
+
+```typescript
+// Bad: 3 round trips
+const user = await db.select().from(users).where(eq(users.id, 1));
+const posts = await db.select().from(postsTable).where(eq(postsTable.userId, 1));
+const comments = await db.select().from(commentsTable).limit(10);
+
+// Good: 1 round trip
+const [user, posts, comments] = await db.batch([
+  db.select().from(users).where(eq(users.id, 1)),
+  db.select().from(postsTable).where(eq(postsTable.userId, 1)),
+  db.select().from(commentsTable).limit(10),
+]);
+```
+
+### Use Relational Queries
+
+Drizzle's relational queries can fetch nested data efficiently:
+
+```typescript
+import { relations } from 'drizzle-orm';
+
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+// Single query with joins
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+```
+
+### Cache Aggressively
+
+```typescript
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const cache = caches.default;
+    
+    // Try cache first
+    let response = await cache.match(request);
+    if (response) return response;
+    
+    // Query database
+    const db = drizzle(env.DB);
+    const users = await db.select().from(usersTable);
+    
+    response = Response.json(users);
+    
+    // Cache for 60 seconds
+    response.headers.set('Cache-Control', 's-maxage=60');
+    await cache.put(request, response.clone());
+    
+    return response;
+  },
+};
+```
+
+### Connection Initialization
+
+Initialize database connections outside request handlers when possible:
+
+```typescript
+// Good: Initialize once
+import { drizzle } from 'drizzle-orm/d1';
+
+let db: ReturnType<typeof drizzle> | null = null;
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    if (!db) {
+      db = drizzle(env.DB);
+    }
+    
+    const users = await db.select().from(usersTable);
+    return Response.json(users);
+  },
+};
+```
+
+## Error Handling
+
+Implement proper error handling for network issues:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+
+export async function GET() {
+  try {
+    const db = drizzle({ connection: process.env.DATABASE_URL! });
+    const users = await db.select().from(usersTable);
+    
+    return Response.json(users);
+  } catch (error) {
+    console.error('Database error:', error);
+    
+    // Return appropriate error response
+    if (error instanceof Error && error.message.includes('timeout')) {
+      return Response.json(
+        { error: 'Database timeout' },
+        { status: 504 }
+      );
+    }
+    
+    return Response.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## TypeScript Configuration
+
+Ensure your TypeScript config works with edge runtimes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types"]
+  }
+}
+```
+
+## Deployment Checklist
+
+<Steps>
+
+<Step title="Verify edge compatibility">
+  - Use HTTP-based database drivers only
+  - Avoid Node.js-specific APIs
+  - Test locally with edge runtime emulators
+</Step>
+
+<Step title="Optimize bundle size">
+  - Import only needed Drizzle modules
+  - Use tree-shaking friendly imports
+  - Check bundle size with your platform's CLI
+</Step>
+
+<Step title="Configure environment variables">
+  - Set `DATABASE_URL` in platform dashboard
+  - Use platform-specific secrets management
+  - Never commit credentials to git
+</Step>
+
+<Step title="Test in staging">
+  - Deploy to preview/staging environment first
+  - Verify queries work correctly
+  - Check latency and performance
+</Step>
+
+<Step title="Monitor production">
+  - Set up error tracking (Sentry, LogRocket, etc.)
+  - Monitor query performance
+  - Track edge function execution time
+</Step>
+
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Error: Cannot find module 'node:*'">
+  You're using a Node.js-specific driver. Switch to an edge-compatible driver:
+  - `pg` → `drizzle-orm/neon-http`
+  - `mysql2` → `drizzle-orm/planetscale-serverless`
+  - `better-sqlite3` → `drizzle-orm/d1` or `drizzle-orm/libsql`
+</Accordion>
+
+<Accordion title="Timeout errors">
+  Edge functions have strict execution time limits (usually 10-30 seconds):
+  - Optimize slow queries with indexes
+  - Use batch operations to reduce round trips
+  - Consider caching frequently accessed data
+</Accordion>
+
+<Accordion title="Bundle size too large">
+  Reduce bundle size:
+  - Import specific Drizzle modules: `import { eq } from 'drizzle-orm'`
+  - Avoid importing entire schema in edge functions
+  - Use platform-specific bundling optimizations
+</Accordion>
+
+<Accordion title="Database connection errors">
+  Verify:
+  - Environment variables are set correctly
+  - Connection string includes proper authentication
+  - Database allows connections from edge IP ranges
+  - SSL/TLS is configured if required
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Serverless Databases" icon="server" href="/guides/serverless">
+  Learn about serverless database platforms
+</Card>
+
+<Card title="Best Practices" icon="star" href="/guides/best-practices">
+  Optimize your Drizzle implementation
+</Card>
+
+<Card title="Schema Design" icon="diagram-project" href="/essentials/schema">
+  Design efficient database schemas
+</Card>
+
+<Card title="Query Performance" icon="gauge-high" href="/essentials/queries">
+  Write fast, optimized queries
+</Card>
+
+</CardGroup>

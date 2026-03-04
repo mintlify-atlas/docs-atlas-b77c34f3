@@ -1,0 +1,579 @@
+---
+title: Columns
+description: Define type-safe columns with Drizzle ORM for PostgreSQL, MySQL, and SQLite databases.
+---
+
+Columns define the structure and data types of your tables. Drizzle provides database-specific column types with full TypeScript inference.
+
+## Column modifiers
+
+All column types support these common modifiers:
+
+```typescript
+import { pgTable, text, integer } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: integer('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  bio: text('bio').default(''),
+  status: text('status').default('active'),
+});
+```
+
+### Available modifiers
+
+<Steps>
+  <Step title=".notNull()">
+    Makes the column required (NOT NULL constraint)
+    ```typescript
+    name: text('name').notNull()
+    ```
+  </Step>
+
+  <Step title=".default()">
+    Sets a default value for the column
+    ```typescript
+    status: text('status').default('active')
+    ```
+  </Step>
+
+  <Step title=".primaryKey()">
+    Marks the column as the primary key
+    ```typescript
+    id: serial('id').primaryKey()
+    ```
+  </Step>
+
+  <Step title=".unique()">
+    Adds a unique constraint
+    ```typescript
+    email: text('email').unique()
+    ```
+  </Step>
+
+  <Step title=".references()">
+    Creates a foreign key reference
+    ```typescript
+    authorId: integer('author_id').references(() => users.id)
+    ```
+  </Step>
+</Steps>
+
+## PostgreSQL column types
+
+### Integer types
+
+<CodeGroup>
+```typescript smallint
+import { smallint } from 'drizzle-orm/pg-core';
+
+// 16-bit integer (-32,768 to 32,767)
+age: smallint('age')
+```
+
+```typescript integer
+import { integer } from 'drizzle-orm/pg-core';
+
+// 32-bit integer (-2,147,483,648 to 2,147,483,647)
+count: integer('count')
+```
+
+```typescript bigint
+import { bigint } from 'drizzle-orm/pg-core';
+
+// 64-bit integer
+views: bigint('views', { mode: 'number' })
+// mode: 'number' | 'bigint'
+```
+</CodeGroup>
+
+### Serial (auto-increment) types
+
+<CodeGroup>
+```typescript serial
+import { serial } from 'drizzle-orm/pg-core';
+
+// Auto-incrementing 32-bit integer
+id: serial('id').primaryKey()
+```
+
+```typescript bigserial
+import { bigserial } from 'drizzle-orm/pg-core';
+
+// Auto-incrementing 64-bit integer
+id: bigserial('id', { mode: 'number' }).primaryKey()
+```
+
+```typescript smallserial
+import { smallserial } from 'drizzle-orm/pg-core';
+
+// Auto-incrementing 16-bit integer
+id: smallserial('id').primaryKey()
+```
+</CodeGroup>
+
+### Text types
+
+<CodeGroup>
+```typescript text
+import { text } from 'drizzle-orm/pg-core';
+
+// Variable unlimited length
+description: text('description')
+
+// With enum values for type safety
+status: text('status', { enum: ['active', 'inactive'] })
+```
+
+```typescript varchar
+import { varchar } from 'drizzle-orm/pg-core';
+
+// Variable-length with limit
+email: varchar('email', { length: 255 })
+
+// With enum values
+role: varchar('role', { length: 50, enum: ['admin', 'user'] })
+```
+
+```typescript char
+import { char } from 'drizzle-orm/pg-core';
+
+// Fixed-length
+countryCode: char('country_code', { length: 2 })
+```
+</CodeGroup>
+
+### Numeric types
+
+<CodeGroup>
+```typescript real
+import { real } from 'drizzle-orm/pg-core';
+
+// Single precision floating point (4 bytes)
+temperature: real('temperature')
+```
+
+```typescript doublePrecision
+import { doublePrecision } from 'drizzle-orm/pg-core';
+
+// Double precision floating point (8 bytes)
+price: doublePrecision('price')
+```
+
+```typescript numeric
+import { numeric } from 'drizzle-orm/pg-core';
+
+// Exact numeric with precision and scale
+amount: numeric('amount', { precision: 10, scale: 2 })
+```
+</CodeGroup>
+
+### Boolean type
+
+```typescript
+import { boolean } from 'drizzle-orm/pg-core';
+
+isActive: boolean('is_active').default(true)
+isVerified: boolean('is_verified').notNull().default(false)
+```
+
+### Date and time types
+
+<CodeGroup>
+```typescript timestamp
+import { timestamp } from 'drizzle-orm/pg-core';
+
+// Returns Date object
+createdAt: timestamp('created_at').defaultNow()
+
+// With timezone
+updatedAt: timestamp('updated_at', { withTimezone: true })
+
+// With precision (0-6)
+publishedAt: timestamp('published_at', { precision: 3 })
+
+// String mode
+createdAt: timestamp('created_at', { mode: 'string' })
+```
+
+```typescript date
+import { date } from 'drizzle-orm/pg-core';
+
+// Date without time
+birthDate: date('birth_date')
+
+// String mode
+birthDate: date('birth_date', { mode: 'string' })
+```
+
+```typescript time
+import { time } from 'drizzle-orm/pg-core';
+
+// Time without date
+officehours: time('office_hours')
+
+// With precision and timezone
+startTime: time('start_time', { precision: 3, withTimezone: true })
+```
+
+```typescript interval
+import { interval } from 'drizzle-orm/pg-core';
+
+// Time interval
+duration: interval('duration')
+```
+</CodeGroup>
+
+### JSON types
+
+<CodeGroup>
+```typescript json
+import { json } from 'drizzle-orm/pg-core';
+
+// JSON data (stored as text)
+metadata: json('metadata').$type<{ key: string; value: number }>()
+```
+
+```typescript jsonb
+import { jsonb } from 'drizzle-orm/pg-core';
+
+// Binary JSON (more efficient, supports indexing)
+settings: jsonb('settings').$type<{ theme: string; notifications: boolean }>()
+```
+</CodeGroup>
+
+### Network types
+
+<CodeGroup>
+```typescript inet
+import { inet } from 'drizzle-orm/pg-core';
+
+// IPv4 or IPv6 address
+ipAddress: inet('ip_address')
+```
+
+```typescript cidr
+import { cidr } from 'drizzle-orm/pg-core';
+
+// Network address
+network: cidr('network')
+```
+
+```typescript macaddr
+import { macaddr } from 'drizzle-orm/pg-core';
+
+// MAC address
+macAddress: macaddr('mac_address')
+```
+</CodeGroup>
+
+### Other PostgreSQL types
+
+<CodeGroup>
+```typescript uuid
+import { uuid } from 'drizzle-orm/pg-core';
+
+// UUID type
+id: uuid('id').defaultRandom().primaryKey()
+```
+
+```typescript geometry
+import { geometry } from 'drizzle-orm/pg-core';
+
+// PostGIS geometry type
+location: geometry('location', { type: 'point', srid: 4326 })
+```
+
+```typescript vector
+import { vector } from 'drizzle-orm/pg-core';
+
+// pgvector extension
+embedding: vector('embedding', { dimensions: 1536 })
+```
+</CodeGroup>
+
+## MySQL column types
+
+### Integer types
+
+<CodeGroup>
+```typescript tinyint
+import { tinyint } from 'drizzle-orm/mysql-core';
+
+// 8-bit integer
+status: tinyint('status')
+```
+
+```typescript smallint
+import { smallint } from 'drizzle-orm/mysql-core';
+
+// 16-bit integer
+count: smallint('count')
+```
+
+```typescript int
+import { int } from 'drizzle-orm/mysql-core';
+
+// 32-bit integer
+quantity: int('quantity')
+```
+
+```typescript mediumint
+import { mediumint } from 'drizzle-orm/mysql-core';
+
+// 24-bit integer
+value: mediumint('value')
+```
+
+```typescript bigint
+import { bigint } from 'drizzle-orm/mysql-core';
+
+// 64-bit integer
+views: bigint('views', { mode: 'number' })
+```
+</CodeGroup>
+
+### Serial type
+
+```typescript
+import { serial } from 'drizzle-orm/mysql-core';
+
+// Auto-increment BIGINT UNSIGNED
+id: serial('id').primaryKey()
+```
+
+### String types
+
+<CodeGroup>
+```typescript varchar
+import { varchar } from 'drizzle-orm/mysql-core';
+
+email: varchar('email', { length: 255 })
+```
+
+```typescript text
+import { text, mediumtext, longtext, tinytext } from 'drizzle-orm/mysql-core';
+
+description: text('description')
+Content: mediumtext('content')
+article: longtext('article')
+snippet: tinytext('snippet')
+```
+
+```typescript char
+import { char } from 'drizzle-orm/mysql-core';
+
+code: char('code', { length: 10 })
+```
+</CodeGroup>
+
+### Numeric types
+
+<CodeGroup>
+```typescript float
+import { float } from 'drizzle-orm/mysql-core';
+
+rating: float('rating')
+```
+
+```typescript double
+import { double } from 'drizzle-orm/mysql-core';
+
+price: double('price')
+```
+
+```typescript decimal
+import { decimal } from 'drizzle-orm/mysql-core';
+
+amount: decimal('amount', { precision: 10, scale: 2 })
+```
+</CodeGroup>
+
+### Date and time types
+
+<CodeGroup>
+```typescript datetime
+import { datetime } from 'drizzle-orm/mysql-core';
+
+createdAt: datetime('created_at')
+```
+
+```typescript timestamp
+import { timestamp } from 'drizzle-orm/mysql-core';
+
+updatedAt: timestamp('updated_at').defaultNow()
+```
+
+```typescript date
+import { date } from 'drizzle-orm/mysql-core';
+
+birthDate: date('birth_date')
+```
+
+```typescript year
+import { year } from 'drizzle-orm/mysql-core';
+
+graduationYear: year('graduation_year')
+```
+</CodeGroup>
+
+### Other MySQL types
+
+<CodeGroup>
+```typescript boolean
+import { boolean } from 'drizzle-orm/mysql-core';
+
+isActive: boolean('is_active')
+```
+
+```typescript json
+import { json } from 'drizzle-orm/mysql-core';
+
+metadata: json('metadata').$type<{ key: string }>()
+```
+
+```typescript binary
+import { binary, varbinary } from 'drizzle-orm/mysql-core';
+
+hash: binary('hash', { length: 32 })
+data: varbinary('data', { length: 255 })
+```
+
+```typescript enum
+import { mysqlEnum } from 'drizzle-orm/mysql-core';
+
+role: mysqlEnum('role', ['admin', 'user', 'guest'])
+```
+</CodeGroup>
+
+## SQLite column types
+
+SQLite uses a flexible type system with type affinities:
+
+<CodeGroup>
+```typescript integer
+import { integer } from 'drizzle-orm/sqlite-core';
+
+// Integer storage
+id: integer('id').primaryKey({ autoIncrement: true })
+count: integer('count')
+
+// Boolean mode
+isActive: integer('is_active', { mode: 'boolean' })
+
+// Timestamp mode
+createdAt: integer('created_at', { mode: 'timestamp' })
+createdAtMs: integer('created_at_ms', { mode: 'timestamp_ms' })
+```
+
+```typescript real
+import { real } from 'drizzle-orm/sqlite-core';
+
+// Floating point
+price: real('price')
+```
+
+```typescript text
+import { text } from 'drizzle-orm/sqlite-core';
+
+// Text storage
+name: text('name')
+email: text('email', { length: 255 })
+
+// JSON mode
+metadata: text('metadata', { mode: 'json' }).$type<{ key: string }>()
+
+// Enum values
+status: text('status', { enum: ['active', 'inactive'] })
+```
+
+```typescript blob
+import { blob } from 'drizzle-orm/blob-core';
+
+// Binary data
+avatar: blob('avatar', { mode: 'buffer' })
+// mode: 'buffer' | 'json'
+```
+
+```typescript numeric
+import { numeric } from 'drizzle-orm/sqlite-core';
+
+// Numeric storage (TEXT affinity for precision)
+amount: numeric('amount')
+```
+</CodeGroup>
+
+## Custom column types
+
+Create custom column types for all databases:
+
+<CodeGroup>
+```typescript PostgreSQL
+import { customType } from 'drizzle-orm/pg-core';
+
+const customText = customType<{ data: string }>{
+  dataType() {
+    return 'text';
+  },
+  toDriver(value: string): string {
+    return value.toLowerCase();
+  },
+  fromDriver(value: string): string {
+    return value.toUpperCase();
+  },
+});
+
+export const users = pgTable('users', {
+  name: customText('name'),
+});
+```
+
+```typescript MySQL
+import { customType } from 'drizzle-orm/mysql-core';
+
+const customInt = customType<{ data: number }>{
+  dataType() {
+    return 'int';
+  },
+  toDriver(value: number): number {
+    return value * 100;
+  },
+  fromDriver(value: number): number {
+    return value / 100;
+  },
+});
+```
+
+```typescript SQLite
+import { customType } from 'drizzle-orm/sqlite-core';
+
+const customBlob = customType<{ data: Buffer }>{
+  dataType() {
+    return 'blob';
+  },
+});
+```
+</CodeGroup>
+
+## Type inference
+
+Drizzle automatically infers TypeScript types from your schema:
+
+```typescript
+import { pgTable, serial, text, boolean } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  isActive: boolean('is_active').default(true),
+});
+
+// Inferred type
+type User = typeof users.$inferSelect;
+// { id: number; name: string; email: string; isActive: boolean | null }
+
+type NewUser = typeof users.$inferInsert;
+// { id?: number; name: string; email: string; isActive?: boolean | null }
+```

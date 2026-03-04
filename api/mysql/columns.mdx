@@ -1,0 +1,857 @@
+---
+title: MySQL Columns
+description: Complete API reference for all MySQL column types in Drizzle ORM
+---
+
+Drizzle ORM provides type-safe column builders for all MySQL data types. Each column type maps to the corresponding MySQL type and TypeScript type.
+
+## Numeric Types
+
+### int()
+
+MySQL `INT` type for 32-bit integers.
+
+```typescript
+int(config?: { unsigned?: boolean }): MySqlIntBuilderInitial
+```
+
+<ParamField path="config.unsigned" type="boolean" default="false">
+  Whether the column is unsigned.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { mysqlTable, int } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey().autoincrement(),
+  age: int(),
+  score: int({ unsigned: true }),
+  balance: int().notNull().default(0)
+});
+```
+
+---
+
+### bigint()
+
+MySQL `BIGINT` type for 64-bit integers. Supports both `number` and `bigint` modes.
+
+```typescript
+bigint<TMode extends 'number' | 'bigint'>(
+  config: { mode: TMode; unsigned?: boolean }
+): TMode extends 'number' ? MySqlBigInt53BuilderInitial : MySqlBigInt64BuilderInitial
+```
+
+<ParamField path="config.mode" type="'number' | 'bigint'" required>
+  - `'number'`: Values up to 2^53-1 as JavaScript numbers
+  - `'bigint'`: Full 64-bit range as JavaScript bigint
+</ParamField>
+
+<ParamField path="config.unsigned" type="boolean" default="false">
+  Whether the column is unsigned.
+</ParamField>
+
+#### Examples
+
+```typescript
+export const analytics = mysqlTable('analytics', {
+  id: bigint({ mode: 'number' }).primaryKey(),
+  views: bigint({ mode: 'bigint' }),
+  largeNumber: bigint({ mode: 'bigint', unsigned: true })
+});
+```
+
+---
+
+### tinyint()
+
+MySQL `TINYINT` type for small integers (-128 to 127 or 0 to 255 unsigned).
+
+```typescript
+tinyint(config?: { unsigned?: boolean }): MySqlTinyIntBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const settings = mysqlTable('settings', {
+  id: int().primaryKey(),
+  enabled: tinyint(), // Often used for boolean flags
+  priority: tinyint({ unsigned: true })
+});
+```
+
+---
+
+### smallint()
+
+MySQL `SMALLINT` type for small integers (-32768 to 32767 or 0 to 65535 unsigned).
+
+```typescript
+smallint(config?: { unsigned?: boolean }): MySqlSmallIntBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const products = mysqlTable('products', {
+  id: int().primaryKey(),
+  stock: smallint({ unsigned: true }),
+  discount: smallint() // Can be negative
+});
+```
+
+---
+
+### mediumint()
+
+MySQL `MEDIUMINT` type for medium-sized integers.
+
+```typescript
+mediumint(config?: { unsigned?: boolean }): MySqlMediumIntBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const counters = mysqlTable('counters', {
+  id: int().primaryKey(),
+  visits: mediumint({ unsigned: true })
+});
+```
+
+---
+
+### serial()
+
+MySQL `SERIAL` type, which is an alias for `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE`.
+
+```typescript
+serial(): MySqlSerialBuilderInitial
+```
+
+<Note>
+`serial()` automatically applies `.notNull()`, `.autoincrement()`, and `.primaryKey()` modifiers.
+</Note>
+
+#### Examples
+
+```typescript
+export const logs = mysqlTable('logs', {
+  id: serial(), // Auto-incrementing primary key
+  message: varchar({ length: 255 })
+});
+```
+
+---
+
+### decimal()
+
+MySQL `DECIMAL` type for exact numeric values. Supports `string`, `number`, and `bigint` modes.
+
+```typescript
+decimal<TMode extends 'string' | 'number' | 'bigint'>(config?: {
+  mode?: TMode;
+  precision?: number;
+  scale?: number;
+  unsigned?: boolean;
+}): MySqlDecimalBuilderInitial
+```
+
+<ParamField path="config.mode" type="'string' | 'number' | 'bigint'" default="'string'">
+  How to represent the value in JavaScript.
+</ParamField>
+
+<ParamField path="config.precision" type="number" optional>
+  Total number of digits.
+</ParamField>
+
+<ParamField path="config.scale" type="number" optional>
+  Number of digits after decimal point.
+</ParamField>
+
+<ParamField path="config.unsigned" type="boolean" default="false">
+  Whether the column is unsigned.
+</ParamField>
+
+#### Examples
+
+```typescript
+export const products = mysqlTable('products', {
+  id: int().primaryKey(),
+  price: decimal({ precision: 10, scale: 2 }), // String by default
+  weight: decimal({ precision: 8, scale: 3, mode: 'number' }),
+  largeValue: decimal({ precision: 20, scale: 0, mode: 'bigint' })
+});
+```
+
+---
+
+### float()
+
+MySQL `FLOAT` type for single-precision floating-point numbers.
+
+```typescript
+float(config?: {
+  precision?: number;
+  scale?: number;
+  unsigned?: boolean;
+}): MySqlFloatBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const measurements = mysqlTable('measurements', {
+  id: int().primaryKey(),
+  temperature: float(),
+  humidity: float({ precision: 5, scale: 2 }),
+  distance: float({ unsigned: true })
+});
+```
+
+---
+
+### double()
+
+MySQL `DOUBLE` type for double-precision floating-point numbers.
+
+```typescript
+double(config?: {
+  precision?: number;
+  scale?: number;
+  unsigned?: boolean;
+}): MySqlDoubleBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const coordinates = mysqlTable('coordinates', {
+  id: int().primaryKey(),
+  latitude: double({ precision: 10, scale: 8 }),
+  longitude: double({ precision: 11, scale: 8 })
+});
+```
+
+---
+
+### real()
+
+MySQL `REAL` type, synonym for `DOUBLE`.
+
+```typescript
+real(config?: {
+  precision?: number;
+  scale?: number;
+  unsigned?: boolean;
+}): MySqlRealBuilderInitial
+```
+
+---
+
+## String Types
+
+### varchar()
+
+MySQL `VARCHAR` type for variable-length strings.
+
+```typescript
+varchar<TEnum extends [string, ...string[]]>(config: {
+  length: number;
+  enum?: TEnum;
+}): MySqlVarCharBuilderInitial<TEnum>
+```
+
+<ParamField path="config.length" type="number" required>
+  Maximum length of the string (1 to 65,535).
+</ParamField>
+
+<ParamField path="config.enum" type="string[]" optional>
+  Array of allowed values for type safety.
+</ParamField>
+
+#### Examples
+
+```typescript
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  name: varchar({ length: 255 }).notNull(),
+  email: varchar({ length: 320 }).notNull().unique(),
+  status: varchar({ length: 20, enum: ['active', 'inactive', 'banned'] })
+});
+```
+
+---
+
+### char()
+
+MySQL `CHAR` type for fixed-length strings.
+
+```typescript
+char<TEnum extends [string, ...string[]]>(config: {
+  length?: number;
+  enum?: TEnum;
+}): MySqlCharBuilderInitial<TEnum>
+```
+
+<ParamField path="config.length" type="number" optional>
+  Fixed length of the string (0 to 255). Defaults to 1.
+</ParamField>
+
+#### Examples
+
+```typescript
+export const codes = mysqlTable('codes', {
+  id: int().primaryKey(),
+  countryCode: char({ length: 2 }), // 'US', 'UK', etc.
+  currencyCode: char({ length: 3 }), // 'USD', 'EUR', etc.
+  flag: char({ length: 1, enum: ['Y', 'N'] })
+});
+```
+
+---
+
+### text()
+
+MySQL `TEXT` type for long text content (up to 65,535 characters).
+
+```typescript
+text<TEnum extends [string, ...string[]]>(config?: {
+  enum?: TEnum;
+}): MySqlTextBuilderInitial<TEnum>
+```
+
+#### Examples
+
+```typescript
+export const posts = mysqlTable('posts', {
+  id: int().primaryKey(),
+  title: varchar({ length: 255 }),
+  content: text().notNull(),
+  summary: text()
+});
+```
+
+---
+
+### tinytext()
+
+MySQL `TINYTEXT` type for short text (up to 255 characters).
+
+```typescript
+tinytext<TEnum extends [string, ...string[]]>(config?: {
+  enum?: TEnum;
+}): MySqlTextBuilderInitial<TEnum>
+```
+
+---
+
+### mediumtext()
+
+MySQL `MEDIUMTEXT` type for medium-length text (up to 16,777,215 characters).
+
+```typescript
+mediumtext<TEnum extends [string, ...string[]]>(config?: {
+  enum?: TEnum;
+}): MySqlTextBuilderInitial<TEnum>
+```
+
+#### Examples
+
+```typescript
+export const articles = mysqlTable('articles', {
+  id: int().primaryKey(),
+  content: mediumtext().notNull()
+});
+```
+
+---
+
+### longtext()
+
+MySQL `LONGTEXT` type for very long text (up to 4,294,967,295 characters).
+
+```typescript
+longtext<TEnum extends [string, ...string[]]>(config?: {
+  enum?: TEnum;
+}): MySqlTextBuilderInitial<TEnum>
+```
+
+#### Examples
+
+```typescript
+export const documents = mysqlTable('documents', {
+  id: int().primaryKey(),
+  content: longtext().notNull()
+});
+```
+
+---
+
+## Binary Types
+
+### binary()
+
+MySQL `BINARY` type for fixed-length binary data.
+
+```typescript
+binary(config?: { length?: number }): MySqlBinaryBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const files = mysqlTable('files', {
+  id: int().primaryKey(),
+  hash: binary({ length: 32 }) // SHA-256 hash
+});
+```
+
+---
+
+### varbinary()
+
+MySQL `VARBINARY` type for variable-length binary data.
+
+```typescript
+varbinary(config: { length: number }): MySqlVarBinaryBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const uploads = mysqlTable('uploads', {
+  id: int().primaryKey(),
+  data: varbinary({ length: 1024 })
+});
+```
+
+---
+
+## Date and Time Types
+
+### date()
+
+MySQL `DATE` type for dates without time.
+
+```typescript
+date<TMode extends 'date' | 'string'>(config?: {
+  mode?: TMode;
+}): TMode extends 'string' ? MySqlDateStringBuilderInitial : MySqlDateBuilderInitial
+```
+
+<ParamField path="config.mode" type="'date' | 'string'" default="'date'">
+  - `'date'`: JavaScript Date object
+  - `'string'`: ISO date string (YYYY-MM-DD)
+</ParamField>
+
+#### Examples
+
+```typescript
+export const events = mysqlTable('events', {
+  id: int().primaryKey(),
+  eventDate: date(), // Date object
+  scheduledDate: date({ mode: 'string' }) // String
+});
+```
+
+---
+
+### datetime()
+
+MySQL `DATETIME` type for date and time.
+
+```typescript
+datetime<TMode extends 'date' | 'string'>(config?: {
+  mode?: TMode;
+  fsp?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+}): MySqlDateTimeBuilderInitial
+```
+
+<ParamField path="config.mode" type="'date' | 'string'" default="'date'">
+  How to represent the value in JavaScript.
+</ParamField>
+
+<ParamField path="config.fsp" type="0 | 1 | 2 | 3 | 4 | 5 | 6" optional>
+  Fractional seconds precision (0-6 digits).
+</ParamField>
+
+#### Examples
+
+```typescript
+export const logs = mysqlTable('logs', {
+  id: int().primaryKey(),
+  createdAt: datetime().notNull().defaultNow(),
+  updatedAt: datetime({ fsp: 3 }), // Millisecond precision
+  scheduledFor: datetime({ mode: 'string' })
+});
+```
+
+---
+
+### timestamp()
+
+MySQL `TIMESTAMP` type for Unix timestamps.
+
+```typescript
+timestamp<TMode extends 'date' | 'string'>(config?: {
+  mode?: TMode;
+  fsp?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+}): MySqlTimestampBuilderInitial
+```
+
+<ParamField path="config.mode" type="'date' | 'string'" default="'date'">
+  How to represent the value in JavaScript.
+</ParamField>
+
+<ParamField path="config.fsp" type="0 | 1 | 2 | 3 | 4 | 5 | 6" optional>
+  Fractional seconds precision.
+</ParamField>
+
+<Note>
+`TIMESTAMP` has a range from '1970-01-01 00:00:01' UTC to '2038-01-19 03:14:07' UTC.
+</Note>
+
+#### Examples
+
+```typescript
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  createdAt: timestamp().notNull().defaultNow(),
+  updatedAt: timestamp().notNull().defaultNow().onUpdateNow(),
+  lastLogin: timestamp({ fsp: 6 }) // Microsecond precision
+});
+```
+
+---
+
+### time()
+
+MySQL `TIME` type for time of day.
+
+```typescript
+time(config?: { fsp?: 0 | 1 | 2 | 3 | 4 | 5 | 6 }): MySqlTimeBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const schedules = mysqlTable('schedules', {
+  id: int().primaryKey(),
+  startTime: time(),
+  endTime: time({ fsp: 3 })
+});
+```
+
+---
+
+### year()
+
+MySQL `YEAR` type for year values.
+
+```typescript
+year(): MySqlYearBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const vehicles = mysqlTable('vehicles', {
+  id: int().primaryKey(),
+  manufactureYear: year()
+});
+```
+
+---
+
+## Boolean Type
+
+### boolean()
+
+MySQL `BOOLEAN` type (alias for `TINYINT(1)`).
+
+```typescript
+boolean(): MySqlBooleanBuilderInitial
+```
+
+#### Examples
+
+```typescript
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  isActive: boolean().notNull().default(true),
+  emailVerified: boolean().notNull().default(false),
+  isAdmin: boolean()
+});
+```
+
+---
+
+## JSON Type
+
+### json()
+
+MySQL `JSON` type for storing JSON data.
+
+```typescript
+json<TData = unknown>(): MySqlJsonBuilderInitial
+```
+
+<Note>
+The JSON column automatically serializes/deserializes JavaScript objects.
+</Note>
+
+#### Examples
+
+```typescript
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  metadata: json(),
+  preferences: json().$type<{
+    theme: 'light' | 'dark';
+    notifications: boolean;
+  }>(),
+  tags: json().$type<string[]>()
+});
+
+// Usage
+await db.insert(users).values({
+  id: 1,
+  metadata: { source: 'web', campaign: 'summer2024' },
+  preferences: { theme: 'dark', notifications: true },
+  tags: ['premium', 'verified']
+});
+```
+
+---
+
+## Enum Type
+
+### mysqlEnum()
+
+MySQL `ENUM` type for predefined string values.
+
+```typescript
+// With string array
+mysqlEnum<T extends [string, ...string[]]>(
+  values: T
+): MySqlEnumColumnBuilderInitial<T>
+
+// With TypeScript enum
+mysqlEnum<E extends Record<string, string>>(
+  enumObj: E
+): MySqlEnumObjectColumnBuilderInitial<E>
+```
+
+<ParamField path="values" type="string[]" required>
+  Array of allowed enum values (at least one value required).
+</ParamField>
+
+#### Examples
+
+```typescript
+// String array enum
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  role: mysqlEnum(['admin', 'user', 'guest']).notNull()
+});
+
+// TypeScript enum
+enum UserRole {
+  ADMIN = 'admin',
+  USER = 'user',
+  GUEST = 'guest'
+}
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  role: mysqlEnum(UserRole).notNull()
+});
+
+// With default value
+export const posts = mysqlTable('posts', {
+  id: int().primaryKey(),
+  status: mysqlEnum(['draft', 'published', 'archived'])
+    .notNull()
+    .default('draft')
+});
+```
+
+---
+
+## Custom Types
+
+### customType()
+
+Define custom column types with custom serialization/deserialization logic.
+
+```typescript
+customType<TData>(config: {
+  dataType: () => string;
+  toDriver?: (value: TData) => unknown;
+  fromDriver?: (value: unknown) => TData;
+}): MySqlCustomColumnBuilder
+```
+
+<ParamField path="config.dataType" type="function" required>
+  Function that returns the MySQL column type as a string.
+</ParamField>
+
+<ParamField path="config.toDriver" type="function" optional>
+  Transform value before sending to database.
+</ParamField>
+
+<ParamField path="config.fromDriver" type="function" optional>
+  Transform value after reading from database.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { customType } from 'drizzle-orm/mysql-core';
+
+// Custom Point type
+type Point = { x: number; y: number };
+
+const point = customType<Point>({
+  dataType() {
+    return 'point';
+  },
+  toDriver(value: Point): string {
+    return `POINT(${value.x}, ${value.y})`;
+  },
+  fromDriver(value: unknown): Point {
+    // Parse MySQL POINT format
+    const match = String(value).match(/POINT\(([^)]+)\)/);
+    if (!match) throw new Error('Invalid point format');
+    const [x, y] = match[1].split(' ').map(Number);
+    return { x, y };
+  }
+});
+
+export const locations = mysqlTable('locations', {
+  id: int().primaryKey(),
+  coordinates: point().notNull()
+});
+
+// Custom encrypted string type
+const encrypted = customType<string>({
+  dataType() {
+    return 'varchar(500)';
+  },
+  toDriver(value: string): string {
+    return encrypt(value); // Your encryption logic
+  },
+  fromDriver(value: unknown): string {
+    return decrypt(String(value)); // Your decryption logic
+  }
+});
+
+export const secrets = mysqlTable('secrets', {
+  id: int().primaryKey(),
+  apiKey: encrypted().notNull()
+});
+```
+
+---
+
+## Column Modifiers
+
+All column types support these common modifiers:
+
+### notNull()
+
+Makes the column required (NOT NULL constraint).
+
+```typescript
+varchar({ length: 255 }).notNull()
+```
+
+---
+
+### default()
+
+Sets a default value for the column.
+
+```typescript
+int().default(0)
+varchar({ length: 50 }).default('unknown')
+boolean().default(false)
+```
+
+---
+
+### defaultNow()
+
+Sets default to current timestamp (for date/time columns).
+
+```typescript
+timestamp().defaultNow()
+datetime().defaultNow()
+```
+
+---
+
+### onUpdateNow()
+
+Automatically updates to current timestamp on row update (for timestamp columns).
+
+```typescript
+timestamp().notNull().defaultNow().onUpdateNow()
+```
+
+---
+
+### primaryKey()
+
+Marks the column as primary key.
+
+```typescript
+int().primaryKey()
+serial() // Automatically includes primaryKey
+```
+
+---
+
+### autoincrement()
+
+Enables auto-increment for integer columns.
+
+```typescript
+int().primaryKey().autoincrement()
+```
+
+---
+
+### unique()
+
+Adds a unique constraint to the column.
+
+```typescript
+varchar({ length: 255 }).unique()
+```
+
+---
+
+### references()
+
+Defines a foreign key reference to another table.
+
+```typescript
+int().references(() => users.id)
+int().references(() => users.id, { onDelete: 'cascade' })
+```
+
+---
+
+### $type()
+
+Overrides the TypeScript type for the column.
+
+```typescript
+json().$type<{ name: string; age: number }>()
+varchar({ length: 255 }).$type<'admin' | 'user'>()
+```

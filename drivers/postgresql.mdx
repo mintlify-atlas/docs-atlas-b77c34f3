@@ -1,0 +1,452 @@
+---
+title: 'PostgreSQL Drivers'
+description: 'Complete guide to PostgreSQL database drivers in Drizzle ORM'
+---
+
+# PostgreSQL Drivers
+
+Drizzle ORM supports multiple PostgreSQL drivers, each optimized for different deployment environments and use cases.
+
+## node-postgres (pg)
+
+The traditional PostgreSQL driver for Node.js with robust connection pooling.
+
+### Installation
+
+```bash
+npm install drizzle-orm pg
+npm install -D @types/pg
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Client Instance
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: 5432,
+  user: 'postgres',
+  password: 'password',
+  database: 'mydb',
+});
+
+const db = drizzle(pool);
+```
+
+```typescript Connection String
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+const db = drizzle('postgres://user:password@host:port/database');
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: {
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Connection Pool Configuration
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: 5432,
+  user: 'postgres',
+  password: 'password',
+  database: 'mydb',
+  max: 20, // Maximum pool size
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+const db = drizzle(pool);
+```
+
+### Accessing the Client
+
+```typescript
+const db = drizzle(pool);
+
+// Access underlying pg client
+db.$client.query('SELECT NOW()');
+```
+
+---
+
+## postgres.js
+
+A modern, fast PostgreSQL driver with excellent TypeScript support.
+
+### Installation
+
+```bash
+npm install drizzle-orm postgres
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Client Instance
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+
+const client = postgres({
+  host: 'localhost',
+  port: 5432,
+  database: 'mydb',
+  username: 'postgres',
+  password: 'password',
+});
+
+const db = drizzle(client);
+```
+
+```typescript Connection String
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+
+const client = postgres('postgres://user:password@host:port/database');
+const db = drizzle(client);
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/postgres-js';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: {
+    url: process.env.DATABASE_URL,
+    max: 10,
+  },
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Advanced Options
+
+```typescript
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+
+const client = postgres({
+  host: 'localhost',
+  port: 5432,
+  database: 'mydb',
+  username: 'postgres',
+  password: 'password',
+  max: 10,
+  idle_timeout: 20,
+  connect_timeout: 10,
+  prepare: true, // Use prepared statements
+});
+
+const db = drizzle(client);
+```
+
+<Note>
+postgres.js automatically handles date parsing. Drizzle overrides default parsers to return raw values for consistent date handling.
+</Note>
+
+---
+
+## Neon Serverless
+
+WebSocket-based PostgreSQL driver optimized for Neon's serverless databases.
+
+### Installation
+
+```bash
+npm install drizzle-orm @neondatabase/serverless
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Pool
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from '@neondatabase/serverless';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool);
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: process.env.DATABASE_URL,
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### With WebSocket Polyfill
+
+Required for environments without native WebSocket support:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
+
+// Option 1: Set globally
+neonConfig.webSocketConstructor = ws;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool);
+
+// Option 2: Pass in config
+const db = drizzle({
+  connection: process.env.DATABASE_URL,
+  ws,
+});
+```
+
+---
+
+## Neon HTTP
+
+HTTP-based PostgreSQL driver for edge environments and serverless functions.
+
+### Installation
+
+```bash
+npm install drizzle-orm @neondatabase/serverless
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Neon Function
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL);
+const db = drizzle(sql);
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/neon-http';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: process.env.DATABASE_URL,
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Advanced Options
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL, {
+  fullResults: true,
+  arrayMode: false,
+  fetchOptions: {
+    priority: 'high',
+  },
+});
+
+const db = drizzle(sql);
+```
+
+### Row-Level Security with Auth Token
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
+import { users } from './schema';
+
+const sql = neon(process.env.DATABASE_URL);
+const db = drizzle(sql);
+
+// Use auth token for RLS
+const authToken = 'user-jwt-token';
+const results = await db
+  .$withAuth(authToken)
+  .select()
+  .from(users);
+```
+
+### Batch Queries
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
+import { users, posts } from './schema';
+
+const sql = neon(process.env.DATABASE_URL);
+const db = drizzle(sql);
+
+const batchResults = await db.batch([
+  db.select().from(users),
+  db.select().from(posts),
+]);
+```
+
+<Warning>
+Neon HTTP is designed for edge environments. For long-running Node.js servers, use Neon Serverless or node-postgres instead.
+</Warning>
+
+---
+
+## Vercel Postgres
+
+Optimized PostgreSQL driver for Vercel deployments.
+
+### Installation
+
+```bash
+npm install drizzle-orm @vercel/postgres
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Default Client
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import { sql } from '@vercel/postgres';
+import * as schema from './schema';
+
+// Uses default @vercel/postgres client
+const db = drizzle({ schema });
+
+// Or explicitly pass the client
+const db = drizzle(sql, { schema });
+```
+
+```typescript Custom Client
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import { createPool } from '@vercel/postgres';
+
+const pool = createPool({
+  connectionString: process.env.POSTGRES_URL,
+});
+
+const db = drizzle(pool);
+```
+</CodeGroup>
+
+### Environment Variables
+
+Vercel automatically provides these environment variables:
+
+```bash
+POSTGRES_URL="..."
+POSTGRES_PRISMA_URL="..."
+POSTGRES_URL_NON_POOLING="..."
+POSTGRES_USER="..."
+POSTGRES_HOST="..."
+POSTGRES_PASSWORD="..."
+POSTGRES_DATABASE="..."
+```
+
+### Vercel Edge Functions
+
+```typescript
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import * as schema from './schema';
+
+const db = drizzle({ schema });
+
+export const runtime = 'edge';
+
+export async function GET() {
+  const users = await db.select().from(schema.users);
+  return Response.json(users);
+}
+```
+
+---
+
+## Choosing a Driver
+
+<Tabs>
+  <Tab title="Node.js Servers">
+    **Recommended: node-postgres or postgres.js**
+
+    - Connection pooling for optimal performance
+    - Battle-tested in production environments
+    - Full PostgreSQL feature support
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/node-postgres';
+    import { Pool } from 'pg';
+
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const db = drizzle(pool);
+    ```
+  </Tab>
+  <Tab title="Serverless">
+    **Recommended: Neon Serverless**
+
+    - WebSocket-based connections
+    - Optimized for serverless cold starts
+    - Compatible with Neon, AWS Lambda, etc.
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/neon-serverless';
+    import { Pool } from '@neondatabase/serverless';
+
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const db = drizzle(pool);
+    ```
+  </Tab>
+  <Tab title="Edge Runtime">
+    **Recommended: Neon HTTP or Vercel Postgres**
+
+    - HTTP-based, no persistent connections
+    - Works in Cloudflare Workers, Vercel Edge, etc.
+    - Minimal cold start overhead
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/neon-http';
+    import { neon } from '@neondatabase/serverless';
+
+    const sql = neon(process.env.DATABASE_URL);
+    const db = drizzle(sql);
+    ```
+  </Tab>
+</Tabs>
+
+## Mock Database for Testing
+
+All drivers support creating mock instances for testing:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from './schema';
+
+const mockDb = drizzle.mock({ schema });
+
+// Use in tests without a real database connection
+```
+
+<Note>
+Mock databases are useful for unit testing query builders but don't execute actual SQL.
+</Note>

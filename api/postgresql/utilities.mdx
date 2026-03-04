@@ -1,0 +1,559 @@
+---
+title: "PostgreSQL Utilities"
+description: "Utility functions and helpers for PostgreSQL schema and query operations"
+---
+
+## Schema Utilities
+
+### getTableConfig()
+
+Extracts complete table configuration including columns, indexes, and constraints.
+
+```typescript
+import { getTableConfig } from 'drizzle-orm/pg-core';
+import { users } from './schema';
+
+const config = getTableConfig(users);
+console.log(config);
+// {
+//   columns: [... column objects],
+//   indexes: [... index objects],
+//   foreignKeys: [... foreign key objects],
+//   checks: [... check constraint objects],
+//   primaryKeys: [... primary key objects],
+//   uniqueConstraints: [... unique constraint objects],
+//   name: 'users',
+//   schema: undefined,
+//   policies: [... RLS policy objects],
+//   enableRLS: false
+// }
+```
+
+<ParamField path="table" type="PgTable" required>
+  The table to extract configuration from
+</ParamField>
+
+<ResponseField name="columns" type="PgColumn[]">
+  Array of column objects
+</ResponseField>
+
+<ResponseField name="indexes" type="Index[]">
+  Array of index definitions
+</ResponseField>
+
+<ResponseField name="foreignKeys" type="ForeignKey[]">
+  Array of foreign key constraints
+</ResponseField>
+
+<ResponseField name="checks" type="Check[]">
+  Array of check constraints
+</ResponseField>
+
+<ResponseField name="primaryKeys" type="PrimaryKey[]">
+  Array of primary key definitions
+</ResponseField>
+
+<ResponseField name="uniqueConstraints" type="UniqueConstraint[]">
+  Array of unique constraints
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Table name
+</ResponseField>
+
+<ResponseField name="schema" type="string | undefined">
+  Schema name (undefined for public schema)
+</ResponseField>
+
+<ResponseField name="policies" type="PgPolicy[]">
+  Array of Row Level Security policies
+</ResponseField>
+
+<ResponseField name="enableRLS" type="boolean">
+  Whether Row Level Security is enabled
+</ResponseField>
+
+### getViewConfig()
+
+Extracts view configuration.
+
+```typescript
+import { getViewConfig } from 'drizzle-orm/pg-core';
+import { myView } from './schema';
+
+const config = getViewConfig(myView);
+console.log(config.name, config.schema, config.query);
+```
+
+<ParamField path="view" type="PgView" required>
+  The view to extract configuration from
+</ParamField>
+
+### getMaterializedViewConfig()
+
+Extracts materialized view configuration.
+
+```typescript
+import { getMaterializedViewConfig } from 'drizzle-orm/pg-core';
+import { myMaterializedView } from './schema';
+
+const config = getMaterializedViewConfig(myMaterializedView);
+```
+
+<ParamField path="view" type="PgMaterializedView" required>
+  The materialized view to extract configuration from
+</ParamField>
+
+## Constraint Builders
+
+### index()
+
+Creates an index definition.
+
+```typescript
+import { pgTable, serial, varchar, index } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+  name: varchar('name', { length: 255 }),
+}, (table) => [
+  // Simple index
+  index('email_idx').on(table.email),
+  
+  // Composite index
+  index('name_email_idx').on(table.name, table.email),
+  
+  // With method
+  index('name_idx').using('btree', table.name),
+  
+  // Partial index
+  index('active_users_idx')
+    .on(table.email)
+    .where(sql`${table.active} = true`),
+]);
+```
+
+<ParamField path="name" type="string" required>
+  Index name
+</ParamField>
+
+**Methods:**
+
+- `.on(...columns)`: Specify columns to index
+- `.using(method, ...columns)`: Specify index method (btree, hash, gist, gin, etc.)
+- `.where(condition)`: Create partial index
+- `.asc()` / `.desc()`: Sort order (for btree indexes)
+- `.nullsFirst()` / `.nullsLast()`: NULL ordering
+
+### uniqueIndex()
+
+Creates a unique index.
+
+```typescript
+import { pgTable, serial, varchar, uniqueIndex } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+  username: varchar('username', { length: 255 }),
+}, (table) => [
+  uniqueIndex('email_unique_idx').on(table.email),
+  uniqueIndex('username_unique_idx').on(table.username),
+]);
+```
+
+Same API as `index()` but creates a unique index.
+
+### primaryKey()
+
+Defines a primary key constraint (for composite keys).
+
+```typescript
+import { pgTable, integer, varchar, primaryKey } from 'drizzle-orm/pg-core';
+
+const userRoles = pgTable('user_roles', {
+  userId: integer('user_id'),
+  roleId: integer('role_id'),
+  grantedAt: timestamp('granted_at'),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] }),
+]);
+```
+
+<ParamField path="config.columns" type="PgColumn[]" required>
+  Columns that form the primary key
+</ParamField>
+
+<ParamField path="config.name" type="string" optional>
+  Constraint name
+</ParamField>
+
+### foreignKey()
+
+Defines a foreign key constraint.
+
+```typescript
+import { pgTable, integer, foreignKey } from 'drizzle-orm/pg-core';
+
+const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id'),
+  categoryId: integer('category_id'),
+}, (table) => [
+  foreignKey({
+    columns: [table.userId],
+    foreignColumns: [users.id],
+    name: 'posts_user_fk',
+  })
+    .onDelete('cascade')
+    .onUpdate('cascade'),
+  
+  // Composite foreign key
+  foreignKey({
+    columns: [table.categoryId, table.userId],
+    foreignColumns: [categories.id, categories.ownerId],
+  }),
+]);
+```
+
+<ParamField path="config.columns" type="PgColumn[]" required>
+  Local columns
+</ParamField>
+
+<ParamField path="config.foreignColumns" type="PgColumn[]" required>
+  Referenced columns in foreign table
+</ParamField>
+
+<ParamField path="config.name" type="string" optional>
+  Constraint name
+</ParamField>
+
+**Methods:**
+
+- `.onDelete(action)`: `'cascade'` | `'set null'` | `'set default'` | `'restrict'` | `'no action'`
+- `.onUpdate(action)`: Same options as onDelete
+
+### unique()
+
+Defines a unique constraint.
+
+```typescript
+import { pgTable, varchar, integer, unique } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+  organizationId: integer('organization_id'),
+}, (table) => [
+  unique('email_per_org').on(table.email, table.organizationId),
+]);
+```
+
+<ParamField path="name" type="string" optional>
+  Constraint name
+</ParamField>
+
+**Methods:**
+
+- `.on(...columns)`: Columns that must be unique together
+
+### check()
+
+Defines a check constraint.
+
+```typescript
+import { pgTable, integer, check, sql } from 'drizzle-orm/pg-core';
+
+const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  price: integer('price'),
+  discount: integer('discount'),
+  stock: integer('stock'),
+}, (table) => [
+  check('positive_price', sql`${table.price} > 0`),
+  check('valid_discount', sql`${table.discount} >= 0 AND ${table.discount} <= 100`),
+  check('stock_check', sql`${table.stock} >= 0`),
+]);
+```
+
+<ParamField path="name" type="string" required>
+  Constraint name
+</ParamField>
+
+<ParamField path="condition" type="SQL" required>
+  SQL condition that must be true
+</ParamField>
+
+## Row Level Security
+
+### pgPolicy()
+
+Defines a Row Level Security policy.
+
+```typescript
+import { pgTable, pgPolicy, sql } from 'drizzle-orm/pg-core';
+import { authenticatedRole, anonymousRole } from './roles';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+}, (table) => [
+  pgPolicy('users_select_policy', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`true`,
+  }),
+  
+  pgPolicy('users_update_own', {
+    for: 'update',
+    to: authenticatedRole,
+    using: sql`${table.id} = current_user_id()`,
+  }),
+]).enableRLS();
+```
+
+<ParamField path="name" type="string" required>
+  Policy name
+</ParamField>
+
+<ParamField path="config.for" type="'all' | 'select' | 'insert' | 'update' | 'delete'" optional>
+  Which operations the policy applies to
+</ParamField>
+
+<ParamField path="config.to" type="PgRole | PgRole[]" optional>
+  Which roles the policy applies to
+</ParamField>
+
+<ParamField path="config.using" type="SQL" optional>
+  USING clause (which rows are visible)
+</ParamField>
+
+<ParamField path="config.withCheck" type="SQL" optional>
+  WITH CHECK clause (which rows can be modified)
+</ParamField>
+
+### pgRole()
+
+Defines a database role for use with RLS.
+
+```typescript
+import { pgRole } from 'drizzle-orm/pg-core';
+
+export const authenticatedRole = pgRole('authenticated');
+export const anonymousRole = pgRole('anonymous');
+export const serviceRole = pgRole('service_role');
+```
+
+<ParamField path="name" type="string" required>
+  Role name in the database
+</ParamField>
+
+## Sequences
+
+### pgSequence()
+
+Defines a PostgreSQL sequence.
+
+```typescript
+import { pgSequence } from 'drizzle-orm/pg-core';
+
+export const userIdSeq = pgSequence('user_id_seq', {
+  startWith: 1000,
+  increment: 1,
+  minValue: 1,
+  maxValue: 999999,
+  cache: 20,
+  cycle: false,
+});
+
+// Use in table
+export const users = pgTable('users', {
+  id: integer('id').default(sql`nextval('user_id_seq')`).primaryKey(),
+  name: varchar('name', { length: 255 }),
+});
+```
+
+<ParamField path="name" type="string" required>
+  Sequence name
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  Sequence configuration:
+  - `startWith`: Starting value
+  - `increment`: Increment amount
+  - `minValue`: Minimum value
+  - `maxValue`: Maximum value
+  - `cache`: Number of values to cache
+  - `cycle`: Whether to cycle when reaching limits
+</ParamField>
+
+## Views
+
+### pgView()
+
+Defines a PostgreSQL view.
+
+```typescript
+import { pgView } from 'drizzle-orm/pg-core';
+
+export const activeUsers = pgView('active_users').as((qb) =>
+  qb.select({
+    id: users.id,
+    email: users.email,
+  })
+    .from(users)
+    .where(eq(users.active, true))
+);
+
+// Use in queries
+const result = await db.select().from(activeUsers);
+```
+
+<ParamField path="name" type="string" required>
+  View name
+</ParamField>
+
+**Methods:**
+
+- `.as(query)`: Define the view's query
+- `.existing()`: Reference an existing view without creating it
+
+### pgMaterializedView()
+
+Defines a PostgreSQL materialized view.
+
+```typescript
+import { pgMaterializedView } from 'drizzle-orm/pg-core';
+
+export const userStats = pgMaterializedView('user_stats').as((qb) =>
+  qb.select({
+    userId: users.id,
+    postCount: sql<number>`count(${posts.id})`.as('post_count'),
+  })
+    .from(users)
+    .leftJoin(posts, eq(users.id, posts.userId))
+    .groupBy(users.id)
+);
+
+// Refresh the materialized view
+await db.refreshMaterializedView(userStats);
+```
+
+<ParamField path="name" type="string" required>
+  Materialized view name
+</ParamField>
+
+**Methods:**
+
+- `.as(query)`: Define the view's query
+- `.existing()`: Reference an existing materialized view
+
+## Array Utilities
+
+### arrayOverlaps()
+
+Checks if PostgreSQL arrays have overlapping elements.
+
+```typescript
+import { sql } from 'drizzle-orm';
+import { arrayOverlaps } from 'drizzle-orm/pg-core';
+
+const result = await db.select()
+  .from(posts)
+  .where(arrayOverlaps(posts.tags, ['typescript', 'drizzle']));
+```
+
+### arrayContains()
+
+Checks if a PostgreSQL array contains all specified elements.
+
+```typescript
+import { arrayContains } from 'drizzle-orm/pg-core';
+
+const result = await db.select()
+  .from(posts)
+  .where(arrayContains(posts.tags, ['typescript']));
+```
+
+### arrayContained()
+
+Checks if a PostgreSQL array is contained by another array.
+
+```typescript
+import { arrayContained } from 'drizzle-orm/pg-core';
+
+const result = await db.select()
+  .from(posts)
+  .where(arrayContained(posts.tags, ['typescript', 'javascript', 'drizzle']));
+```
+
+## Type Inference Helpers
+
+### InferSelectModel
+
+Infers the TypeScript type for selected rows.
+
+```typescript
+import type { InferSelectModel } from 'drizzle-orm';
+import { users } from './schema';
+
+type User = InferSelectModel<typeof users>;
+// { id: number; name: string; email: string | null; ... }
+```
+
+### InferInsertModel
+
+Infers the TypeScript type for insert operations.
+
+```typescript
+import type { InferInsertModel } from 'drizzle-orm';
+import { users } from './schema';
+
+type NewUser = InferInsertModel<typeof users>;
+// { id?: number; name: string; email?: string | null; ... }
+```
+
+## Migration Utilities
+
+### sql.empty()
+
+Creates an empty SQL object.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const empty = sql.empty();
+```
+
+### sql.join()
+
+Joins multiple SQL fragments.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const fragments = [sql`id = 1`, sql`name = 'John'`];
+const joined = sql.join(fragments, sql` AND `);
+// Results in: id = 1 AND name = 'John'
+```
+
+### sql.raw()
+
+Creates SQL from a raw string (use with caution - no escaping).
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const query = sql.raw('SELECT * FROM users');
+```
+
+**Warning:** `sql.raw()` does not escape values. Use parameterized queries instead:
+
+```typescript
+// Good: Parameterized
+const safe = sql`SELECT * FROM users WHERE id = ${userId}`;
+
+// Bad: SQL injection risk
+const unsafe = sql.raw(`SELECT * FROM users WHERE id = ${userId}`);
+```

@@ -1,0 +1,437 @@
+---
+title: Joins
+description: Join tables together using Drizzle ORM's type-safe join operations including left, right, inner, full, and cross joins.
+---
+
+Drizzle ORM provides a comprehensive set of join operations to combine data from multiple tables with full type safety.
+
+## Inner Join
+
+Retrieve rows that have matching values in both tables:
+
+```typescript
+import { db } from './db';
+import { users, posts } from './schema';
+import { eq } from 'drizzle-orm';
+
+// Get users with their posts
+const result = await db.select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.userId));
+
+// Result structure:
+// [
+//   { users: {...}, posts: {...} },
+//   { users: {...}, posts: {...} },
+// ]
+```
+
+<Note>
+Inner joins only return rows where the join condition is met in both tables. Users without posts won't appear in the results.
+</Note>
+
+## Left Join
+
+Retrieve all rows from the left table, with matched rows from the right table:
+
+```typescript
+// Get all users and their posts (if they have any)
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId));
+
+// Users without posts will have posts: null
+// [
+//   { users: {...}, posts: {...} },
+//   { users: {...}, posts: null },  // User with no posts
+// ]
+```
+
+<Note>
+Left joins return all rows from the left table. If no match is found in the right table, the right side fields will be null.
+</Note>
+
+## Right Join
+
+Retrieve all rows from the right table, with matched rows from the left table:
+
+```typescript
+// Get all posts with their authors (even if author is missing)
+const result = await db.select()
+  .from(users)
+  .rightJoin(posts, eq(users.id, posts.userId));
+
+// Posts without users will have users: null
+// [
+//   { users: {...}, posts: {...} },
+//   { users: null, posts: {...} },  // Post with deleted user
+// ]
+```
+
+## Full Join
+
+Retrieve all rows from both tables:
+
+```typescript
+// Get all users and all posts, matched where possible
+const result = await db.select()
+  .from(users)
+  .fullJoin(posts, eq(users.id, posts.userId));
+
+// Both sides can be null
+// [
+//   { users: {...}, posts: {...} },  // Matched
+//   { users: {...}, posts: null },   // User without posts
+//   { users: null, posts: {...} },   // Post without user
+// ]
+```
+
+<Warning>
+Full join is PostgreSQL-specific. It's not available in MySQL or SQLite.
+</Warning>
+
+## Cross Join
+
+Create a Cartesian product of two tables:
+
+```typescript
+// Every user paired with every post
+const result = await db.select()
+  .from(users)
+  .crossJoin(posts);
+
+// No join condition needed
+// If 5 users and 10 posts, returns 50 rows
+```
+
+## Multiple Joins
+
+Join more than two tables:
+
+```typescript
+import { users, posts, comments } from './schema';
+
+// Get users with their posts and comments
+const result = await db.select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.userId))
+  .innerJoin(comments, eq(posts.id, comments.postId));
+
+// Result:
+// [
+//   {
+//     users: {...},
+//     posts: {...},
+//     comments: {...}
+//   }
+// ]
+```
+
+## Join with Partial Select
+
+Select specific columns from joined tables:
+
+```typescript
+const result = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postId: posts.id,
+  postTitle: posts.title,
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId));
+
+// Result is flattened:
+// [
+//   { userId: 1, userName: 'John', postId: 10, postTitle: 'Hello' },
+//   { userId: 2, userName: 'Jane', postId: null, postTitle: null },
+// ]
+```
+
+## Filtering Joined Data
+
+Apply where conditions to joined tables:
+
+<CodeGroup>
+
+```typescript Filter Main Table
+import { eq, gt } from 'drizzle-orm';
+
+// Only users older than 18 with their posts
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .where(gt(users.age, 18));
+```
+
+```typescript Filter Joined Table
+// All users, but only published posts
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .where(eq(posts.published, true));
+```
+
+```typescript Filter Both Tables
+import { and } from 'drizzle-orm';
+
+// Active users with published posts
+const result = await db.select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.userId))
+  .where(and(
+    eq(users.active, true),
+    eq(posts.published, true)
+  ));
+```
+
+</CodeGroup>
+
+## Complex Join Conditions
+
+Use multiple conditions in join clauses:
+
+```typescript
+import { and, eq, gt } from 'drizzle-orm';
+
+// Join with multiple conditions
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, and(
+    eq(users.id, posts.userId),
+    eq(posts.published, true),
+    gt(posts.views, 100)
+  ));
+```
+
+## Self Joins
+
+Join a table to itself:
+
+```typescript
+import { alias } from 'drizzle-orm/pg-core';
+
+// Create an alias for self-join
+const managers = alias(users, 'managers');
+
+// Get employees with their managers
+const result = await db.select({
+  employeeName: users.name,
+  managerName: managers.name,
+})
+  .from(users)
+  .leftJoin(managers, eq(users.managerId, managers.id));
+```
+
+## Lateral Joins (PostgreSQL)
+
+Use lateral joins for correlated subqueries:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Get each user with their 3 most recent posts
+const latestPosts = db.select()
+  .from(posts)
+  .where(eq(posts.userId, users.id))
+  .orderBy(desc(posts.createdAt))
+  .limit(3)
+  .as('latest_posts');
+
+const result = await db.select()
+  .from(users)
+  .leftJoinLateral(latestPosts, sql`true`);
+```
+
+## Join with Aggregations
+
+Combine joins with aggregate functions:
+
+```typescript
+import { count, sql } from 'drizzle-orm';
+
+// Count posts per user
+const result = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postCount: count(posts.id),
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .groupBy(users.id, users.name);
+```
+
+## Join with Subqueries
+
+Join to subquery results:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Create a subquery
+const recentPosts = db.select({
+  id: posts.id,
+  userId: posts.userId,
+  title: posts.title,
+})
+  .from(posts)
+  .where(gt(posts.createdAt, sql`now() - interval '7 days'`))
+  .as('recent_posts');
+
+// Join with the subquery
+const result = await db.select()
+  .from(users)
+  .innerJoin(recentPosts, eq(users.id, recentPosts.userId));
+```
+
+## Many-to-Many Joins
+
+Join through a junction table:
+
+```typescript
+import { students, courses, enrollments } from './schema';
+
+// Get students with their enrolled courses
+const result = await db.select({
+  studentName: students.name,
+  courseName: courses.name,
+})
+  .from(students)
+  .innerJoin(enrollments, eq(students.id, enrollments.studentId))
+  .innerJoin(courses, eq(enrollments.courseId, courses.id));
+```
+
+## Join Types Comparison
+
+<CardGroup cols={2}>
+  <Card title="Inner Join" icon="link">
+    Returns only matching rows from both tables. Use when you need data that exists in both tables.
+  </Card>
+  
+  <Card title="Left Join" icon="arrow-left">
+    Returns all rows from left table, matched rows from right. Use to include all primary records.
+  </Card>
+  
+  <Card title="Right Join" icon="arrow-right">
+    Returns all rows from right table, matched rows from left. Less common, often swapped for left join.
+  </Card>
+  
+  <Card title="Full Join" icon="arrows-left-right">
+    Returns all rows from both tables. Use when you need complete data from both sides.
+  </Card>
+  
+  <Card title="Cross Join" icon="grid">
+    Cartesian product of both tables. Use for combinations or mathematical operations.
+  </Card>
+</CardGroup>
+
+## Type Safety with Joins
+
+Drizzle provides full type safety for joined queries:
+
+```typescript
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId));
+
+// TypeScript knows the structure:
+// result: Array<{
+//   users: User;
+//   posts: Post | null;
+// }>
+
+result.forEach(row => {
+  console.log(row.users.name);  // Always available
+  console.log(row.posts?.title); // Nullable with left join
+});
+```
+
+## Performance Tips
+
+<Steps>
+  <Step title="Index Join Columns">
+    Ensure foreign key columns used in joins are indexed for optimal performance.
+  </Step>
+  
+  <Step title="Select Only Needed Columns">
+    Use partial selects to reduce data transfer when joining large tables.
+  </Step>
+  
+  <Step title="Filter Early">
+    Apply WHERE conditions to reduce rows before joining when possible.
+  </Step>
+  
+  <Step title="Avoid N+1 Queries">
+    Use joins instead of multiple separate queries to fetch related data.
+  </Step>
+</Steps>
+
+## Common Join Patterns
+
+<Tabs>
+  <Tab title="User Posts">
+    ```typescript
+    // Get users with their posts
+    const usersWithPosts = await db.select()
+      .from(users)
+      .leftJoin(posts, eq(users.id, posts.userId));
+    ```
+  </Tab>
+  
+  <Tab title="Post Comments">
+    ```typescript
+    // Get posts with comment counts
+    const postsWithComments = await db.select({
+      postId: posts.id,
+      title: posts.title,
+      commentCount: count(comments.id),
+    })
+      .from(posts)
+      .leftJoin(comments, eq(posts.id, comments.postId))
+      .groupBy(posts.id, posts.title);
+    ```
+  </Tab>
+  
+  <Tab title="Categories">
+    ```typescript
+    // Get products with category names
+    const productsWithCategory = await db.select({
+      productName: products.name,
+      categoryName: categories.name,
+    })
+      .from(products)
+      .innerJoin(categories, eq(products.categoryId, categories.id));
+    ```
+  </Tab>
+  
+  <Tab title="Hierarchical">
+    ```typescript
+    // Self-join for hierarchical data
+    const children = alias(categories, 'children');
+    
+    const hierarchy = await db.select({
+      parentName: categories.name,
+      childName: children.name,
+    })
+      .from(categories)
+      .leftJoin(children, eq(categories.id, children.parentId));
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Aggregations" href="/queries/aggregations" icon="chart-simple">
+    Learn about aggregate functions with joins
+  </Card>
+  <Card title="Subqueries" href="/queries/subqueries" icon="diagram-nested">
+    Use subqueries in your joins
+  </Card>
+  <Card title="Select Queries" href="/queries/select" icon="magnifying-glass">
+    Master the select query builder
+  </Card>
+  <Card title="Performance" href="/essentials/performance" icon="gauge-high">
+    Optimize your join queries
+  </Card>
+</CardGroup>

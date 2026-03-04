@@ -1,0 +1,714 @@
+---
+title: Migrations
+description: Complete guide to Drizzle Kit migrations including file format, programmatic API, and migration management.
+---
+
+Drizzle Kit generates SQL migration files with metadata for tracking and applying database schema changes.
+
+## Migration Files
+
+### File Structure
+
+Migrations are stored in the output directory (default: `drizzle/`) with the following structure:
+
+```
+drizzle/
+├── meta/
+│   ├── _journal.json
+│   └── 0000_snapshot.json
+├── 0000_initial.sql
+└── 0001_add_users.sql
+```
+
+### SQL Migration File
+
+Generated SQL files contain DDL statements with optional breakpoints:
+
+```sql
+CREATE TABLE "users" (
+  "id" serial PRIMARY KEY NOT NULL,
+  "name" text NOT NULL,
+  "email" text NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "email_idx" ON "users" ("email");
+--> statement-breakpoint
+CREATE INDEX "created_at_idx" ON "users" ("created_at");
+```
+
+**Breakpoints** (`--> statement-breakpoint`):
+- Enable sequential execution of statements
+- Required for MySQL, SQLite, and SingleStore (no multi-statement transactions)
+- Optional for PostgreSQL (supports multi-statement transactions)
+
+### Migration Metadata
+
+#### Journal File (`meta/_journal.json`)
+
+Tracks all migrations in order:
+
+```json
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1709553600000,
+      "tag": "0000_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1709640000000,
+      "tag": "0001_add_users",
+      "breakpoints": true
+    }
+  ]
+}
+```
+
+<ResponseField name="version" type="string">
+  Drizzle Kit metadata format version
+</ResponseField>
+
+<ResponseField name="dialect" type="string">
+  Database dialect: `postgresql`, `mysql`, `sqlite`, etc.
+</ResponseField>
+
+<ResponseField name="entries" type="array">
+  List of migration entries in chronological order
+</ResponseField>
+
+<ResponseField name="entries[].idx" type="number">
+  Sequential migration index
+</ResponseField>
+
+<ResponseField name="entries[].tag" type="string">
+  Migration filename (without `.sql`)
+</ResponseField>
+
+<ResponseField name="entries[].when" type="number">
+  Unix timestamp (milliseconds) when migration was created
+</ResponseField>
+
+<ResponseField name="entries[].breakpoints" type="boolean">
+  Whether migration uses statement breakpoints
+</ResponseField>
+
+#### Snapshot File (`meta/XXXX_snapshot.json`)
+
+Complete schema snapshot at migration time:
+
+```json
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "email_idx": {
+          "name": "email_idx",
+          "columns": ["email"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  }
+}
+```
+
+Snapshots enable:
+- Detecting schema changes between migrations
+- Generating accurate diff SQL
+- Validating migration consistency
+
+## Migration Workflow
+
+### 1. Generate Migration
+
+Detect schema changes and create migration:
+
+```bash
+drizzle-kit generate
+```
+
+Process:
+1. Reads current Drizzle schema from `schema` files
+2. Compares with latest snapshot in `meta/`
+3. Generates SQL diff statements
+4. Creates new migration file with timestamp/index
+5. Updates `_journal.json` and creates new snapshot
+
+### 2. Review Migration
+
+Inspect generated SQL before applying:
+
+```bash
+cat drizzle/0001_*.sql
+```
+
+Check for:
+- Correct DDL statements
+- Data migration needs
+- Potential data loss (DROP statements)
+- Index creation order
+
+### 3. Apply Migration
+
+Execute migrations against database:
+
+```bash
+drizzle-kit migrate
+```
+
+Process:
+1. Connects to database using `dbCredentials`
+2. Creates migrations table if not exists
+3. Queries applied migrations from database
+4. Applies pending migrations in order
+5. Records each migration in migrations table
+
+### 4. Verify Changes
+
+Open Drizzle Studio to verify:
+
+```bash
+drizzle-kit studio
+```
+
+## Programmatic API
+
+Use migration functions directly in your application.
+
+### PostgreSQL
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const db = drizzle(pool);
+
+// Run migrations
+await migrate(db, { 
+  migrationsFolder: './drizzle',
+  migrationsTable: 'migrations',
+  migrationsSchema: 'public',
+});
+
+await pool.end();
+```
+
+### MySQL
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import { migrate } from 'drizzle-orm/mysql2/migrator';
+import mysql from 'mysql2/promise';
+
+const connection = await mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  database: 'mydb',
+});
+
+const db = drizzle(connection);
+
+await migrate(db, { 
+  migrationsFolder: './drizzle',
+});
+
+await connection.end();
+```
+
+### SQLite
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import Database from 'better-sqlite3';
+
+const sqlite = new Database('local.db');
+const db = drizzle(sqlite);
+
+migrate(db, { 
+  migrationsFolder: './drizzle',
+});
+
+sqlite.close();
+```
+
+### Turso (LibSQL)
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { createClient } from '@libsql/client';
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
+
+const db = drizzle(client);
+
+await migrate(db, { 
+  migrationsFolder: './drizzle',
+});
+```
+
+### Migration Options
+
+<ParamField path="migrationsFolder" type="string" required>
+  Path to migrations directory
+  
+  ```typescript
+  { migrationsFolder: './drizzle' }
+  ```
+</ParamField>
+
+<ParamField path="migrationsTable" type="string" default="__drizzle_migrations">
+  Custom migrations tracking table name
+  
+  ```typescript
+  { migrationsTable: 'custom_migrations' }
+  ```
+</ParamField>
+
+<ParamField path="migrationsSchema" type="string" default="drizzle">
+  PostgreSQL: Custom schema for migrations table
+  
+  ```typescript
+  { migrationsSchema: 'public' }
+  ```
+</ParamField>
+
+## Custom Migrations
+
+### Generate Empty Migration
+
+Create migration file for manual SQL:
+
+```bash
+drizzle-kit generate --custom --name=seed_data
+```
+
+Generated file:
+
+```sql
+-- Custom SQL migration
+-- Add your SQL here
+```
+
+Add your SQL statements:
+
+```sql
+-- Seed initial data
+INSERT INTO roles (name) VALUES 
+  ('admin'),
+  ('user'),
+  ('guest');
+--> statement-breakpoint
+INSERT INTO settings (key, value) VALUES 
+  ('site_name', 'My App'),
+  ('maintenance_mode', 'false');
+```
+
+### Data Migrations
+
+Combine DDL and data changes:
+
+```sql
+-- Add new column
+ALTER TABLE "users" ADD COLUMN "status" text DEFAULT 'active' NOT NULL;
+--> statement-breakpoint
+-- Migrate existing data
+UPDATE "users" SET "status" = 'inactive' WHERE "last_login" < NOW() - INTERVAL '1 year';
+--> statement-breakpoint
+-- Add constraint
+ALTER TABLE "users" ADD CONSTRAINT "status_check" CHECK ("status" IN ('active', 'inactive', 'suspended'));
+```
+
+## Migration Prefixes
+
+Control migration file naming:
+
+### Index (default)
+
+```
+0000_initial.sql
+0001_add_users.sql
+0002_add_posts.sql
+```
+
+Config:
+```typescript
+migrations: {
+  prefix: 'index',
+}
+```
+
+### Timestamp
+
+```
+20240304120000_initial.sql
+20240304130000_add_users.sql
+```
+
+Config:
+```typescript
+migrations: {
+  prefix: 'timestamp',
+}
+```
+
+### Unix Timestamp
+
+```
+1709553600_initial.sql
+1709640000_add_users.sql
+```
+
+Config:
+```typescript
+migrations: {
+  prefix: 'unix',
+}
+```
+
+### Supabase Format
+
+```
+20240304120000_initial.sql
+```
+
+Compatible with Supabase migration format.
+
+Config:
+```typescript
+migrations: {
+  prefix: 'supabase',
+}
+```
+
+### No Prefix
+
+```
+initial.sql
+add_users.sql
+```
+
+Config:
+```typescript
+migrations: {
+  prefix: 'none',
+}
+```
+
+<Warning>
+  Using `none` requires unique migration names and careful ordering.
+</Warning>
+
+## Migration Management
+
+### Drop Migration
+
+Remove the last migration:
+
+```bash
+drizzle-kit drop
+```
+
+Interactive prompt:
+```
+? Select migration to remove
+❯ 0002_add_posts.sql
+  0001_add_users.sql
+  Cancel
+```
+
+This:
+- Removes migration SQL file
+- Removes snapshot file
+- Updates `_journal.json`
+- Does NOT revert applied migrations in database
+
+<Warning>
+  To revert database changes, manually create a new migration or restore from backup.
+</Warning>
+
+### Check Migrations
+
+Validate migration consistency:
+
+```bash
+drizzle-kit check
+```
+
+Verifies:
+- Migration files exist for all journal entries
+- Snapshot files are valid JSON
+- No duplicate migration indices
+- SQL syntax is parseable
+
+### Upgrade Migrations
+
+Update migration format after Drizzle Kit upgrades:
+
+```bash
+drizzle-kit up
+```
+
+This updates:
+- Metadata version in snapshots
+- Journal format
+- Snapshot schema structure
+
+Preserves:
+- SQL migration files (unchanged)
+- Migration order
+- Applied migrations in database
+
+## Best Practices
+
+### 1. Version Control
+
+Commit all migration files:
+
+```bash
+git add drizzle/
+git commit -m "Add users table migration"
+```
+
+### 2. Review Before Apply
+
+Always review generated SQL:
+
+```bash
+# Generate
+drizzle-kit generate
+
+# Review
+cat drizzle/0001_*.sql
+
+# Apply only after review
+drizzle-kit migrate
+```
+
+### 3. One-Way Migrations
+
+Migrations are forward-only. To undo:
+
+```bash
+# Create reverse migration
+drizzle-kit generate --name=revert_users
+```
+
+Manually write rollback SQL:
+
+```sql
+DROP TABLE "users";
+```
+
+### 4. Test Migrations
+
+Test on development database first:
+
+```bash
+# Dev environment
+export DATABASE_URL=postgresql://localhost/myapp_dev
+drizzle-kit migrate
+
+# Verify
+drizzle-kit studio
+
+# Then production
+export DATABASE_URL=postgresql://prod/myapp
+drizzle-kit migrate
+```
+
+### 5. Backup Before Migration
+
+Always backup production before migrating:
+
+```bash
+# PostgreSQL
+pg_dump myapp > backup.sql
+
+# Then migrate
+drizzle-kit migrate
+```
+
+### 6. Handle Data Migration
+
+For complex data transformations:
+
+```sql
+-- Add new column
+ALTER TABLE "users" ADD COLUMN "full_name" text;
+--> statement-breakpoint
+-- Migrate data
+UPDATE "users" SET "full_name" = "first_name" || ' ' || "last_name";
+--> statement-breakpoint
+-- Make NOT NULL after data migration
+ALTER TABLE "users" ALTER COLUMN "full_name" SET NOT NULL;
+--> statement-breakpoint
+-- Drop old columns
+ALTER TABLE "users" DROP COLUMN "first_name";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "last_name";
+```
+
+### 7. Use Named Migrations
+
+Descriptive names for clarity:
+
+```bash
+drizzle-kit generate --name=add_user_roles
+drizzle-kit generate --name=create_posts_table
+drizzle-kit generate --name=add_email_verification
+```
+
+## Troubleshooting
+
+### Migration Already Applied
+
+**Error:** Migration has already been applied
+
+**Solution:** Check migrations table:
+
+```sql
+SELECT * FROM drizzle.__drizzle_migrations;
+```
+
+Manually remove if needed (use with caution).
+
+### Conflicting Migrations
+
+**Error:** Migration conflict detected
+
+**Solution:** 
+1. Pull latest migrations from version control
+2. Regenerate migration with latest schema
+3. Resolve conflicts manually
+
+### Breakpoint Errors (MySQL/SQLite)
+
+**Error:** Multi-statement execution not supported
+
+**Solution:** Enable breakpoints:
+
+```typescript
+export default defineConfig({
+  breakpoints: true,
+});
+```
+
+### Snapshot Mismatch
+
+**Error:** Schema snapshot doesn't match database
+
+**Solution:**
+1. Ensure all migrations are applied: `drizzle-kit migrate`
+2. Regenerate snapshot: `drizzle-kit generate`
+3. Or pull fresh schema: `drizzle-kit pull`
+
+## Production Deployment
+
+Run migrations on application startup:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const db = drizzle(pool);
+
+async function runMigrations() {
+  console.log('Running migrations...');
+  
+  try {
+    await migrate(db, { migrationsFolder: './drizzle' });
+    console.log('Migrations completed successfully');
+  } catch (error) {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  }
+}
+
+// Run before starting server
+runMigrations().then(() => {
+  startServer();
+});
+```
+
+Or use dedicated migration script:
+
+```typescript
+// scripts/migrate.ts
+import { migrate } from './migrate-function';
+
+migrate()
+  .then(() => {
+    console.log('Migrations complete');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('Migration error:', err);
+    process.exit(1);
+  });
+```
+
+Package.json:
+```json
+{
+  "scripts": {
+    "migrate": "tsx scripts/migrate.ts",
+    "deploy": "npm run migrate && npm start"
+  }
+}
+```

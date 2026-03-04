@@ -1,0 +1,549 @@
+---
+title: Migrations API
+description: Complete API reference for running database migrations in Drizzle ORM.
+---
+
+Drizzle's migration API allows you to programmatically apply schema changes to your database. Migrations are generated using `drizzle-kit` and applied at runtime using the `migrate()` function.
+
+## Import
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript
+    import { migrate } from 'drizzle-orm/node-postgres/migrator';
+    // Or other PostgreSQL drivers:
+    // import { migrate } from 'drizzle-orm/postgres-js/migrator';
+    // import { migrate } from 'drizzle-orm/neon-http/migrator';
+    ```
+  </Tab>
+  <Tab title="MySQL">
+    ```typescript
+    import { migrate } from 'drizzle-orm/mysql2/migrator';
+    // Or other MySQL drivers:
+    // import { migrate } from 'drizzle-orm/planetscale-serverless/migrator';
+    ```
+  </Tab>
+  <Tab title="SQLite">
+    ```typescript
+    import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+    // Or other SQLite drivers:
+    // import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
+    // import { migrate } from 'drizzle-orm/libsql/migrator';
+    ```
+  </Tab>
+</Tabs>
+
+## migrate()
+
+Apply pending migrations to your database:
+
+<ParamField path="db" type="Database" required>
+  The database instance (with schema type)
+</ParamField>
+
+<ParamField path="config" type="MigrationConfig" required>
+  Migration configuration object
+</ParamField>
+
+### MigrationConfig
+
+<ParamField path="migrationsFolder" type="string" required>
+  Path to the folder containing migration files (relative or absolute)
+</ParamField>
+
+<ParamField path="migrationsTable" type="string">
+  Custom name for the migrations tracking table (default: `__drizzle_migrations`)
+</ParamField>
+
+<ParamField path="migrationsSchema" type="string">
+  Schema name for the migrations table (PostgreSQL only)
+</ParamField>
+
+## Basic Usage
+
+### PostgreSQL
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const db = drizzle(pool, { schema });
+
+// Run migrations
+await migrate(db, {
+  migrationsFolder: './drizzle',
+});
+
+await pool.end();
+```
+
+### MySQL
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import { migrate } from 'drizzle-orm/mysql2/migrator';
+import mysql from 'mysql2/promise';
+import * as schema from './schema';
+
+const connection = await mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  database: 'mydb',
+});
+
+const db = drizzle(connection, { schema });
+
+// Run migrations
+await migrate(db, {
+  migrationsFolder: './drizzle',
+});
+
+await connection.end();
+```
+
+### SQLite
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import Database from 'better-sqlite3';
+import * as schema from './schema';
+
+const sqlite = new Database('sqlite.db');
+const db = drizzle(sqlite, { schema });
+
+// Run migrations
+migrate(db, {
+  migrationsFolder: './drizzle',
+});
+
+sqlite.close();
+```
+
+<Note>
+  SQLite migrations in Drizzle are synchronous, unlike PostgreSQL and MySQL which are asynchronous.
+</Note>
+
+## Migration Files Structure
+
+Migrations are stored in the folder specified by `migrationsFolder`. Drizzle Kit generates:
+
+```
+drizzle/
+├── meta/
+│   └── _journal.json
+├── 0000_initial.sql
+├── 0001_add_users.sql
+└── 0002_add_posts.sql
+```
+
+### _journal.json
+
+Tracks migration metadata:
+
+```json
+{
+  "version": "5",
+  "dialect": "pg",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1699564800000,
+      "tag": "0000_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1699651200000,
+      "tag": "0001_add_users",
+      "breakpoints": true
+    }
+  ]
+}
+```
+
+### Migration SQL Files
+
+Contain SQL statements to modify the schema:
+
+```sql
+-- 0000_initial.sql
+CREATE TABLE IF NOT EXISTS "users" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"email" text NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "email_idx" ON "users" ("email");
+```
+
+The `--> statement-breakpoint` comment separates individual statements for proper execution.
+
+## Custom Migrations Table
+
+### Custom Table Name
+
+```typescript
+await migrate(db, {
+  migrationsFolder: './drizzle',
+  migrationsTable: 'my_migrations',
+});
+```
+
+This creates a table named `my_migrations` instead of the default `__drizzle_migrations`.
+
+### Custom Schema (PostgreSQL)
+
+```typescript
+await migrate(db, {
+  migrationsFolder: './drizzle',
+  migrationsTable: 'migrations',
+  migrationsSchema: 'drizzle',
+});
+```
+
+This creates the migrations table in the `drizzle` schema.
+
+## Migration Tracking
+
+Drizzle automatically creates a migrations table to track which migrations have been applied:
+
+```sql
+-- PostgreSQL example
+CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
+  "id" serial PRIMARY KEY,
+  "hash" text NOT NULL,
+  "created_at" bigint
+);
+```
+
+Each migration is recorded with:
+- **id**: Sequential identifier
+- **hash**: SHA-256 hash of the migration SQL
+- **created_at**: Unix timestamp in milliseconds
+
+## Application Startup Pattern
+
+Common pattern for running migrations on application startup:
+
+### Express.js Example
+
+```typescript
+import express from 'express';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const db = drizzle(pool, { schema });
+
+const app = express();
+
+// Run migrations before starting server
+async function startServer() {
+  console.log('Running migrations...');
+  await migrate(db, { migrationsFolder: './drizzle' });
+  console.log('Migrations complete');
+  
+  app.listen(3000, () => {
+    console.log('Server started on port 3000');
+  });
+}
+
+startServer().catch(console.error);
+```
+
+### NestJS Example
+
+```typescript
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+async function bootstrap() {
+  // Run migrations
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+  
+  const db = drizzle(pool, { schema });
+  await migrate(db, { migrationsFolder: './drizzle' });
+  await pool.end();
+  
+  // Start application
+  const app = await NestFactory.create(AppModule);
+  await app.listen(3000);
+}
+
+bootstrap();
+```
+
+## Separate Migration Script
+
+Create a dedicated script for running migrations:
+
+### migrate.ts
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const runMigrations = async () => {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+
+  const db = drizzle(pool, { schema });
+
+  console.log('Running migrations...');
+
+  try {
+    await migrate(db, { migrationsFolder: './drizzle' });
+    console.log('Migrations completed successfully');
+  } catch (error) {
+    console.error('Migration failed:', error);
+    process.exit(1);
+  } finally {
+    await pool.end();
+  }
+};
+
+runMigrations();
+```
+
+### package.json
+
+```json
+{
+  "scripts": {
+    "migrate": "tsx migrate.ts"
+  }
+}
+```
+
+Run migrations:
+
+```bash
+npm run migrate
+```
+
+## Environment-Specific Migrations
+
+Different migration configs for different environments:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const env = process.env.NODE_ENV || 'development';
+
+const configs = {
+  development: {
+    connectionString: process.env.DEV_DATABASE_URL,
+    migrationsFolder: './drizzle',
+  },
+  staging: {
+    connectionString: process.env.STAGING_DATABASE_URL,
+    migrationsFolder: './drizzle',
+  },
+  production: {
+    connectionString: process.env.PROD_DATABASE_URL,
+    migrationsFolder: './drizzle',
+  },
+};
+
+const config = configs[env];
+
+const pool = new Pool({
+  connectionString: config.connectionString,
+});
+
+const db = drizzle(pool, { schema });
+
+await migrate(db, {
+  migrationsFolder: config.migrationsFolder,
+});
+
+await pool.end();
+```
+
+## Error Handling
+
+### Graceful Error Handling
+
+```typescript
+try {
+  await migrate(db, { migrationsFolder: './drizzle' });
+  console.log('Migrations applied successfully');
+} catch (error) {
+  if (error instanceof Error) {
+    console.error('Migration error:', error.message);
+    
+    // Check for specific errors
+    if (error.message.includes('_journal.json')) {
+      console.error('Journal file not found. Run drizzle-kit generate first.');
+    }
+  }
+  
+  process.exit(1);
+}
+```
+
+### Validation Before Migration
+
+```typescript
+import { existsSync } from 'fs';
+import { join } from 'path';
+
+const migrationsFolder = './drizzle';
+const journalPath = join(migrationsFolder, 'meta', '_journal.json');
+
+if (!existsSync(journalPath)) {
+  console.error('No migrations found. Generate migrations with: drizzle-kit generate');
+  process.exit(1);
+}
+
+await migrate(db, { migrationsFolder });
+```
+
+## Best Practices
+
+### 1. Run Migrations Before App Starts
+
+Ensure database schema is up-to-date before accepting requests:
+
+```typescript
+await migrate(db, { migrationsFolder: './drizzle' });
+app.listen(3000);
+```
+
+### 2. Use Version Control
+
+Commit migration files to version control:
+
+```gitignore
+# .gitignore - DO commit these
+# drizzle/
+# drizzle/meta/
+```
+
+### 3. Test Migrations
+
+Test migrations in development/staging before production:
+
+```bash
+# Development
+NODE_ENV=development npm run migrate
+
+# Staging
+NODE_ENV=staging npm run migrate
+
+# Production
+NODE_ENV=production npm run migrate
+```
+
+### 4. Backup Before Migration
+
+Always backup production databases before applying migrations:
+
+```typescript
+if (process.env.NODE_ENV === 'production') {
+  console.log('Creating backup...');
+  // Run backup command
+  await createBackup();
+}
+
+await migrate(db, { migrationsFolder: './drizzle' });
+```
+
+### 5. Use Transactions
+
+Migrations run within transactions automatically (where supported), ensuring atomicity.
+
+## Generating Migrations
+
+Migrations are generated using Drizzle Kit:
+
+```bash
+# Generate migrations based on schema changes
+npx drizzle-kit generate
+
+# Specify config file
+npx drizzle-kit generate --config=drizzle.config.ts
+```
+
+### drizzle.config.ts
+
+```typescript
+import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './src/schema.ts',
+  out: './drizzle',
+  dialect: 'postgresql',
+  dbCredentials: {
+    connectionString: process.env.DATABASE_URL!,
+  },
+} satisfies Config;
+```
+
+## Migration Workflow
+
+1. **Modify schema**: Update your schema definitions
+2. **Generate migration**: Run `drizzle-kit generate`
+3. **Review SQL**: Check generated SQL files
+4. **Apply migration**: Run `migrate()` function
+5. **Verify**: Test that changes work as expected
+
+## Common Issues
+
+### Migration File Not Found
+
+```typescript
+// Error: Can't find meta/_journal.json file
+```
+
+**Solution**: Run `drizzle-kit generate` to create migrations first.
+
+### Permission Denied
+
+```typescript
+// Error: permission denied to create table
+```
+
+**Solution**: Ensure database user has sufficient privileges:
+
+```sql
+GRANT ALL PRIVILEGES ON DATABASE mydb TO myuser;
+```
+
+### Concurrent Migrations
+
+Multiple instances running migrations simultaneously can cause conflicts.
+
+**Solution**: Use migration locks or ensure only one instance runs migrations.
+
+## Related APIs
+
+- [SQL](/api/core/sql) - Custom SQL in migrations
+- [Transactions](/api/core/transactions) - Transaction behavior
+- [Schema Definition](/schema/tables) - Define database schema

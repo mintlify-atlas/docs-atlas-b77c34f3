@@ -1,0 +1,412 @@
+---
+title: MySQL Table
+description: API reference for defining MySQL tables in Drizzle ORM
+---
+
+Define MySQL tables using the `mysqlTable` function. Tables are the foundation of your database schema.
+
+## Table Definition
+
+### mysqlTable()
+
+Defines a MySQL table with columns and constraints.
+
+```typescript
+mysqlTable<TTableName extends string, TColumnsMap extends Record<string, MySqlColumnBuilderBase>>(
+  name: TTableName,
+  columns: TColumnsMap | ((columnTypes: MySqlColumnBuilders) => TColumnsMap),
+  extraConfig?: (self: BuildColumns<TTableName, TColumnsMap>) => MySqlTableExtraConfigValue[]
+): MySqlTableWithColumns
+```
+
+<ParamField path="name" type="string" required>
+  The name of the table in the database.
+</ParamField>
+
+<ParamField path="columns" type="object | function" required>
+  Column definitions. Can be an object of column builders or a function that receives column type helpers.
+</ParamField>
+
+<ParamField path="extraConfig" type="function" optional>
+  Function to define indexes, foreign keys, and other constraints. Should return an array of constraint builders.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { mysqlTable, int, varchar, timestamp } from 'drizzle-orm/mysql-core';
+import { index, primaryKey, foreignKey } from 'drizzle-orm/mysql-core';
+
+// Basic table
+export const users = mysqlTable('users', {
+  id: int().primaryKey().autoincrement(),
+  name: varchar({ length: 255 }).notNull(),
+  email: varchar({ length: 255 }).notNull().unique(),
+  createdAt: timestamp().notNull().defaultNow()
+});
+
+// Table with column type helpers
+export const posts = mysqlTable('posts', (t) => ({
+  id: t.int().primaryKey().autoincrement(),
+  title: t.varchar({ length: 255 }).notNull(),
+  content: t.text(),
+  authorId: t.int().notNull()
+}));
+
+// Table with indexes and constraints
+export const orders = mysqlTable('orders', {
+  id: int().primaryKey().autoincrement(),
+  userId: int().notNull(),
+  productId: int().notNull(),
+  quantity: int().notNull(),
+  createdAt: timestamp().notNull().defaultNow()
+}, (table) => [
+  index('user_idx').on(table.userId),
+  index('product_idx').on(table.productId),
+  index('created_idx').on(table.createdAt),
+  foreignKey({
+    columns: [table.userId],
+    foreignColumns: [users.id]
+  }).onDelete('cascade')
+]);
+
+// Composite primary key
+export const userRoles = mysqlTable('user_roles', {
+  userId: int().notNull(),
+  roleId: int().notNull(),
+  assignedAt: timestamp().notNull().defaultNow()
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] })
+]);
+```
+
+---
+
+### mysqlTableCreator()
+
+Creates a custom table creator with a name transformation function. Useful for adding prefixes or custom naming conventions.
+
+```typescript
+mysqlTableCreator(
+  customizeTableName: (name: string) => string
+): MySqlTableFn
+```
+
+<ParamField path="customizeTableName" type="function" required>
+  Function that transforms table names. Receives the provided name and returns the actual database table name.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { mysqlTableCreator } from 'drizzle-orm/mysql-core';
+
+// Add prefix to all tables
+const mysqlTable = mysqlTableCreator((name) => `myapp_${name}`);
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey()
+});
+// Creates table named 'myapp_users'
+
+// Environment-based naming
+const env = process.env.NODE_ENV;
+const mysqlTable = mysqlTableCreator(
+  (name) => `${env}_${name}`
+);
+
+export const products = mysqlTable('products', {
+  id: int().primaryKey()
+});
+// Creates 'production_products' or 'development_products'
+```
+
+---
+
+## Schema Organization
+
+### mysqlTableWithSchema()
+
+Defines a table within a specific MySQL schema/database.
+
+```typescript
+mysqlTableWithSchema<TTableName extends string, TSchemaName extends string>(
+  name: TTableName,
+  columns: TColumnsMap,
+  extraConfig: (self: BuildColumns) => MySqlTableExtraConfigValue[],
+  schema: TSchemaName,
+  baseName?: string
+): MySqlTableWithColumns
+```
+
+<ParamField path="name" type="string" required>
+  The table name.
+</ParamField>
+
+<ParamField path="columns" type="object" required>
+  Column definitions.
+</ParamField>
+
+<ParamField path="extraConfig" type="function" required>
+  Constraints and indexes configuration.
+</ParamField>
+
+<ParamField path="schema" type="string" required>
+  The schema/database name.
+</ParamField>
+
+<ParamField path="baseName" type="string" optional>
+  Base name for internal reference. Defaults to `name`.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { mysqlTableWithSchema, int, varchar } from 'drizzle-orm/mysql-core';
+
+// Table in analytics schema
+export const events = mysqlTableWithSchema(
+  'events',
+  {
+    id: int().primaryKey().autoincrement(),
+    eventName: varchar({ length: 255 }).notNull(),
+    userId: int()
+  },
+  undefined,
+  'analytics'
+);
+// Creates table in 'analytics.events'
+
+// Multiple schemas in one application
+export const authUsers = mysqlTableWithSchema(
+  'users',
+  { id: int().primaryKey() },
+  undefined,
+  'auth',
+  'auth_users'
+);
+
+export const appUsers = mysqlTableWithSchema(
+  'users',
+  { id: int().primaryKey() },
+  undefined,
+  'app',
+  'app_users'
+);
+```
+
+---
+
+## Table Constraints
+
+Constraints are defined in the third parameter (extraConfig) of `mysqlTable`.
+
+### Indexes
+
+```typescript
+import { index, uniqueIndex } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  email: varchar({ length: 255 }),
+  name: varchar({ length: 255 }),
+  createdAt: timestamp()
+}, (table) => [
+  // Simple index
+  index('email_idx').on(table.email),
+  
+  // Unique index
+  uniqueIndex('email_unique_idx').on(table.email),
+  
+  // Composite index
+  index('name_created_idx').on(table.name, table.createdAt),
+  
+  // Named index with algorithm
+  index('name_idx').on(table.name).using('btree')
+]);
+```
+
+---
+
+### Primary Keys
+
+```typescript
+import { primaryKey } from 'drizzle-orm/mysql-core';
+
+// Composite primary key
+export const userPermissions = mysqlTable('user_permissions', {
+  userId: int().notNull(),
+  permissionId: int().notNull(),
+  grantedAt: timestamp()
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.permissionId] })
+]);
+
+// Single column primary key (preferred on column)
+export const products = mysqlTable('products', {
+  id: int().primaryKey().autoincrement(),
+  name: varchar({ length: 255 })
+});
+```
+
+---
+
+### Foreign Keys
+
+```typescript
+import { foreignKey } from 'drizzle-orm/mysql-core';
+
+export const posts = mysqlTable('posts', {
+  id: int().primaryKey(),
+  authorId: int().notNull(),
+  categoryId: int()
+}, (table) => [
+  // Basic foreign key
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id]
+  }),
+  
+  // Foreign key with actions
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id]
+  }).onDelete('cascade').onUpdate('restrict'),
+  
+  // Composite foreign key
+  foreignKey({
+    columns: [table.categoryId, table.authorId],
+    foreignColumns: [categories.id, categories.ownerId]
+  }),
+  
+  // Named foreign key
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id],
+    name: 'posts_author_fk'
+  })
+]);
+```
+
+---
+
+### Unique Constraints
+
+```typescript
+import { unique } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  email: varchar({ length: 255 }),
+  username: varchar({ length: 100 }),
+  tenantId: int()
+}, (table) => [
+  // Single column unique
+  unique().on(table.email),
+  
+  // Named unique constraint
+  unique('username_unique').on(table.username),
+  
+  // Composite unique constraint
+  unique('tenant_email_unique').on(table.tenantId, table.email)
+]);
+```
+
+---
+
+### Check Constraints
+
+```typescript
+import { check } from 'drizzle-orm/mysql-core';
+import { sql } from 'drizzle-orm';
+
+export const products = mysqlTable('products', {
+  id: int().primaryKey(),
+  price: decimal({ precision: 10, scale: 2 }),
+  discount: decimal({ precision: 5, scale: 2 }),
+  stock: int()
+}, (table) => [
+  // Check constraint
+  check('price_positive', sql`${table.price} > 0`),
+  
+  // Multiple conditions
+  check('valid_discount', sql`${table.discount} >= 0 AND ${table.discount} <= 100`),
+  
+  // Stock constraint
+  check('stock_non_negative', sql`${table.stock} >= 0`)
+]);
+```
+
+---
+
+## Type Helpers
+
+### MySqlTable
+
+The base table class. All tables defined with `mysqlTable()` are instances of this class.
+
+```typescript
+class MySqlTable<T extends TableConfig>
+```
+
+---
+
+### InferModel
+
+Infer TypeScript types from table definitions.
+
+```typescript
+import { type InferSelectModel, type InferInsertModel } from 'drizzle-orm';
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey().autoincrement(),
+  name: varchar({ length: 255 }).notNull(),
+  email: varchar({ length: 255 }).notNull(),
+  createdAt: timestamp().notNull().defaultNow()
+});
+
+// Type for SELECT queries
+type User = InferSelectModel<typeof users>;
+// { id: number; name: string; email: string; createdAt: Date }
+
+// Type for INSERT queries
+type NewUser = InferInsertModel<typeof users>;
+// { id?: number; name: string; email: string; createdAt?: Date }
+```
+
+---
+
+## Table Configuration
+
+### MySqlTableExtraConfigValue
+
+Union type of all possible table configuration values.
+
+```typescript
+type MySqlTableExtraConfigValue =
+  | IndexBuilder
+  | CheckBuilder
+  | ForeignKeyBuilder
+  | PrimaryKeyBuilder
+  | UniqueConstraintBuilder
+```
+
+---
+
+## Best Practices
+
+<Tip>
+**Column-level constraints**: Define simple constraints (like `.notNull()`, `.unique()`, `.primaryKey()`) directly on columns for better readability.
+</Tip>
+
+<Tip>
+**Table-level constraints**: Use the extraConfig parameter for composite indexes, composite primary keys, and foreign keys.
+</Tip>
+
+<Warning>
+**Reserved words**: Avoid using MySQL reserved keywords as table or column names. If necessary, they will be automatically quoted.
+</Warning>
+
+<Note>
+**Naming conventions**: Choose consistent naming for tables (e.g., plural form like `users`, `posts`) and stick with it throughout your schema.
+</Note>

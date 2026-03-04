@@ -1,0 +1,464 @@
+---
+title: 'MySQL Drivers'
+description: 'Complete guide to MySQL and MariaDB database drivers in Drizzle ORM'
+---
+
+# MySQL Drivers
+
+Drizzle ORM supports MySQL and MySQL-compatible databases through multiple driver implementations.
+
+## mysql2
+
+The most popular MySQL driver for Node.js with prepared statement support.
+
+### Installation
+
+```bash
+npm install drizzle-orm mysql2
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Client Instance
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+
+const connection = await mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'password',
+  database: 'mydb',
+});
+
+const db = drizzle(connection);
+```
+
+```typescript Connection Pool
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: 'password',
+  database: 'mydb',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
+
+const db = drizzle(pool);
+```
+
+```typescript Connection String
+import { drizzle } from 'drizzle-orm/mysql2';
+
+const db = drizzle('mysql://root:password@localhost:3306/mydb');
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/mysql2';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: {
+    host: process.env.DB_HOST,
+    port: parseInt(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+  schema,
+  mode: 'default',
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Connection Pool Configuration
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: 'password',
+  database: 'mydb',
+  
+  // Pool settings
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
+  
+  // Timezone handling
+  timezone: '+00:00',
+  
+  // Charset
+  charset: 'utf8mb4',
+});
+
+const db = drizzle(pool);
+```
+
+### MySQL Modes
+
+Drizzle supports two modes for MySQL connections:
+
+<Tabs>
+  <Tab title="Default Mode">
+    Standard MySQL mode with full feature support including foreign keys and relational queries.
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/mysql2';
+    import * as schema from './schema';
+
+    const db = drizzle(connection, {
+      schema,
+      mode: 'default',
+    });
+    ```
+
+    <Note>
+    Use `default` mode for traditional MySQL and MariaDB databases.
+    </Note>
+  </Tab>
+  <Tab title="PlanetScale Mode">
+    Optimized mode for PlanetScale and other serverless MySQL platforms that don't support foreign keys.
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/mysql2';
+    import * as schema from './schema';
+
+    const db = drizzle(connection, {
+      schema,
+      mode: 'planetscale',
+    });
+    ```
+
+    <Warning>
+    When using `schema` with relational queries, you **must** specify a mode. Drizzle will throw an error if mode is undefined.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Callback API
+
+mysql2 supports both callback and promise-based APIs. Drizzle handles both:
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2'; // Note: not mysql2/promise
+
+// Callback-based pool
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  database: 'mydb',
+});
+
+// Drizzle automatically converts to promise-based API
+const db = drizzle(pool);
+```
+
+### Accessing the Client
+
+```typescript
+const db = drizzle(pool);
+
+// Access underlying mysql2 client
+await db.$client.query('SELECT NOW()');
+```
+
+---
+
+## PlanetScale Serverless
+
+Serverless MySQL driver optimized for PlanetScale's database platform.
+
+### Installation
+
+```bash
+npm install drizzle-orm @planetscale/database
+```
+
+### Basic Usage
+
+<CodeGroup>
+```typescript Client Instance
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import { Client } from '@planetscale/database';
+
+const client = new Client({
+  host: process.env.DATABASE_HOST,
+  username: process.env.DATABASE_USERNAME,
+  password: process.env.DATABASE_PASSWORD,
+});
+
+const db = drizzle(client);
+```
+
+```typescript Connection String
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+
+const db = drizzle(process.env.DATABASE_URL);
+```
+
+```typescript Configuration Object
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import * as schema from './schema';
+
+const db = drizzle({
+  connection: {
+    host: process.env.DATABASE_HOST,
+    username: process.env.DATABASE_USERNAME,
+    password: process.env.DATABASE_PASSWORD,
+  },
+  schema,
+  logger: true,
+});
+```
+</CodeGroup>
+
+### Environment Variables
+
+PlanetScale provides connection details in your dashboard:
+
+```bash
+DATABASE_HOST="aws.connect.psdb.cloud"
+DATABASE_USERNAME="username"
+DATABASE_PASSWORD="pscale_pw_***"
+```
+
+Or use the connection string format:
+
+```bash
+DATABASE_URL="mysql://username:pscale_pw_***@aws.connect.psdb.cloud/database?ssl={\"rejectUnauthorized\":true}"
+```
+
+### Advanced Configuration
+
+```typescript
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import { Client } from '@planetscale/database';
+
+const client = new Client({
+  host: process.env.DATABASE_HOST,
+  username: process.env.DATABASE_USERNAME,
+  password: process.env.DATABASE_PASSWORD,
+  fetch: (url, init) => {
+    // Custom fetch implementation
+    return fetch(url, {
+      ...init,
+      cache: 'no-store',
+    });
+  },
+});
+
+const db = drizzle(client);
+```
+
+### Edge Runtime Example
+
+```typescript
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import { Client } from '@planetscale/database';
+import * as schema from './schema';
+
+export const runtime = 'edge';
+
+const client = new Client({
+  host: process.env.DATABASE_HOST,
+  username: process.env.DATABASE_USERNAME,
+  password: process.env.DATABASE_PASSWORD,
+});
+
+const db = drizzle(client, { schema });
+
+export async function GET() {
+  const users = await db.select().from(schema.users);
+  return Response.json(users);
+}
+```
+
+<Note>
+PlanetScale doesn't support foreign key constraints. Use `mode: 'planetscale'` with mysql2 driver when connecting to PlanetScale via standard MySQL protocol.
+</Note>
+
+---
+
+## Choosing a Driver
+
+<Tabs>
+  <Tab title="Traditional MySQL">
+    **Recommended: mysql2**
+
+    - Full MySQL/MariaDB feature support
+    - Connection pooling
+    - Prepared statements
+    - Best for long-running Node.js servers
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/mysql2';
+    import mysql from 'mysql2/promise';
+
+    const pool = mysql.createPool({
+      uri: process.env.DATABASE_URL,
+      connectionLimit: 10,
+    });
+
+    const db = drizzle(pool, { mode: 'default' });
+    ```
+  </Tab>
+  <Tab title="PlanetScale">
+    **Recommended: @planetscale/database**
+
+    - HTTP-based, no persistent connections
+    - Optimized for PlanetScale infrastructure
+    - Works in edge and serverless environments
+    - Automatic SSL/TLS
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/planetscale-serverless';
+    import { Client } from '@planetscale/database';
+
+    const client = new Client({
+      host: process.env.DATABASE_HOST,
+      username: process.env.DATABASE_USERNAME,
+      password: process.env.DATABASE_PASSWORD,
+    });
+
+    const db = drizzle(client);
+    ```
+  </Tab>
+  <Tab title="Other Serverless MySQL">
+    **Recommended: mysql2 with PlanetScale mode**
+
+    For serverless MySQL platforms without foreign key support:
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/mysql2';
+    import mysql from 'mysql2/promise';
+
+    const connection = await mysql.createConnection(
+      process.env.DATABASE_URL
+    );
+
+    const db = drizzle(connection, {
+      mode: 'planetscale',
+      schema,
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## SSL/TLS Connections
+
+### mysql2 with SSL
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+import fs from 'fs';
+
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'root',
+  password: 'password',
+  database: 'mydb',
+  ssl: {
+    ca: fs.readFileSync('/path/to/ca.pem'),
+    cert: fs.readFileSync('/path/to/client-cert.pem'),
+    key: fs.readFileSync('/path/to/client-key.pem'),
+  },
+});
+
+const db = drizzle(pool);
+```
+
+### PlanetScale (SSL Automatic)
+
+PlanetScale connections are automatically encrypted:
+
+```typescript
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import { Client } from '@planetscale/database';
+
+const client = new Client({
+  host: process.env.DATABASE_HOST,
+  username: process.env.DATABASE_USERNAME,
+  password: process.env.DATABASE_PASSWORD,
+  // SSL is enabled by default
+});
+
+const db = drizzle(client);
+```
+
+## Common Providers
+
+### AWS RDS MySQL
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+
+const pool = mysql.createPool({
+  host: process.env.RDS_HOSTNAME,
+  port: parseInt(process.env.RDS_PORT),
+  user: process.env.RDS_USERNAME,
+  password: process.env.RDS_PASSWORD,
+  database: process.env.RDS_DB_NAME,
+  ssl: 'Amazon RDS',
+});
+
+const db = drizzle(pool, { mode: 'default' });
+```
+
+### Google Cloud SQL
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+
+const pool = mysql.createPool({
+  socketPath: `/cloudsql/${process.env.CLOUD_SQL_CONNECTION_NAME}`,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+});
+
+const db = drizzle(pool, { mode: 'default' });
+```
+
+### Railway
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+
+// Railway provides MYSQL_URL
+const db = drizzle(process.env.MYSQL_URL, {
+  mode: 'default',
+});
+```
+
+## Mock Database for Testing
+
+Both drivers support creating mock instances:
+
+```typescript
+import { drizzle } from 'drizzle-orm/mysql2';
+import * as schema from './schema';
+
+const mockDb = drizzle.mock({
+  schema,
+  mode: 'default',
+});
+```
+
+<Note>
+When using `schema` in configuration, always specify `mode: 'default'` or `mode: 'planetscale'`.
+</Note>

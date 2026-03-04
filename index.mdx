@@ -1,97 +1,302 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+mode: "custom"
 ---
 
-## Setting up
+<div className="relative overflow-hidden bg-gradient-to-br from-[#0f1117] via-[#1a1d27] to-[#0f1117] dark:from-[#0f1117] dark:via-[#1a1d27] dark:to-[#0f1117] py-20 lg:py-28">
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(197,247,79,0.1),transparent_50%)]"></div>
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(165,216,64,0.08),transparent_50%)]"></div>
+  
+  <div className="relative max-w-7xl mx-auto px-6 lg:px-8">
+    <div className="grid lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+      <div className="lg:col-span-7">
+        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight">
+          Headless TypeScript ORM
+        </h1>
+        <p className="text-xl sm:text-2xl text-gray-300 dark:text-gray-300 mb-8 max-w-2xl">
+          Build type-safe SQL queries with zero dependencies. Drizzle ORM is lightweight, performant, and works everywhere.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <a 
+            href="/quickstart" 
+            className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#C5F74F] hover:bg-[#A5D840] text-black font-semibold text-lg transition-colors no-underline"
+          >
+            Get Started
+            <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </a>
+          <a 
+            href="/introduction" 
+            className="inline-flex items-center px-8 py-3.5 rounded-lg border-2 border-white/20 bg-white/5 hover:bg-white/10 hover:border-[#C5F74F]/50 text-white font-semibold text-lg transition-all no-underline"
+          >
+            Learn More
+          </a>
+        </div>
+        <div className="mt-10 grid grid-cols-3 gap-6 max-w-md">
+          <div>
+            <div className="text-3xl font-bold text-[#C5F74F]">~7.4kb</div>
+            <div className="text-sm text-gray-400 dark:text-gray-400 mt-1">Minified + gzipped</div>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-[#C5F74F]">Zero</div>
+            <div className="text-sm text-gray-400 dark:text-gray-400 mt-1">Dependencies</div>
+          </div>
+          <div>
+            <div className="text-3xl font-bold text-[#C5F74F]">100%</div>
+            <div className="text-sm text-gray-400 dark:text-gray-400 mt-1">Type-safe</div>
+          </div>
+        </div>
+      </div>
+      <div className="lg:col-span-5 hidden lg:block">
+        <div className="relative">
+          <div className="absolute inset-0 bg-[#C5F74F]/20 blur-3xl"></div>
+          <div className="relative bg-[#1a1d27] dark:bg-[#1a1d27] rounded-2xl border border-[#27272a] dark:border-[#27272a] p-6 shadow-2xl">
+            <pre className="text-sm text-gray-300 dark:text-gray-300 overflow-x-auto"><code>{`import { drizzle } from 'drizzle-orm/node-postgres';
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
 
-Get your documentation site up and running in minutes.
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+const db = drizzle(process.env.DATABASE_URL);
+const result = await db.select().from(users);`}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-## Make it yours
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Quick start
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Get up and running with Drizzle ORM in minutes
+    </p>
+  </div>
 
-Design a docs site that looks great and empowers your users.
+  <Steps>
+    <Step title="Install Drizzle ORM">
+      Install Drizzle ORM and your database driver using your preferred package manager.
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
-  </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
-  </Card>
+      <CodeGroup>
+      ```bash npm
+      npm install drizzle-orm
+      npm install -D drizzle-kit
+      ```
+
+      ```bash yarn
+      yarn add drizzle-orm
+      yarn add -D drizzle-kit
+      ```
+
+      ```bash pnpm
+      pnpm add drizzle-orm
+      pnpm add -D drizzle-kit
+      ```
+
+      ```bash bun
+      bun add drizzle-orm
+      bun add -D drizzle-kit
+      ```
+      </CodeGroup>
+    </Step>
+
+    <Step title="Define your schema">
+      Create a schema file and define your database tables with full TypeScript support.
+
+      ```typescript schema.ts
+      import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+
+      export const users = pgTable('users', {
+        id: serial('id').primaryKey(),
+        email: text('email').notNull().unique(),
+        name: text('name').notNull(),
+        createdAt: timestamp('created_at').defaultNow(),
+      });
+      ```
+    </Step>
+
+    <Step title="Connect and query">
+      Initialize your database connection and start querying with type-safe operations.
+
+      ```typescript index.ts
+      import { drizzle } from 'drizzle-orm/node-postgres';
+      import { users } from './schema';
+
+      const db = drizzle(process.env.DATABASE_URL!);
+
+      // Type-safe insert
+      await db.insert(users).values({
+        email: 'user@example.com',
+        name: 'John Doe',
+      });
+
+      // Type-safe select
+      const allUsers = await db.select().from(users);
+      ```
+
+      <Note>
+        Your queries are fully typed based on your schema definition. IDEs will provide autocomplete and type checking.
+      </Note>
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Explore by database
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Drizzle ORM supports all major SQL databases with native drivers
+    </p>
+  </div>
+
+  <CardGroup cols={3}>
     <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+      title="PostgreSQL"
+      icon="elephant"
+      href="/drivers/postgresql"
+    >
+      Full support for PostgreSQL with native types, schemas, and advanced features.
+    </Card>
+    <Card
+      title="MySQL"
+      icon="database"
+      href="/drivers/mysql"
+    >
+      Complete MySQL and MariaDB support with all column types and constraints.
+    </Card>
+    <Card
+      title="SQLite"
+      icon="hard-drive"
+      href="/drivers/sqlite"
+    >
+      Lightweight SQLite support for edge, mobile, and embedded databases.
+    </Card>
+  </CardGroup>
+</div>
 
-## Create beautiful pages
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Core features
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Everything you need to build modern database applications
+    </p>
+  </div>
 
-Everything you need to create world-class documentation.
+  <CardGroup cols={2}>
+    <Card
+      title="Type-safe queries"
+      icon="shield-check"
+      href="/core/queries"
+    >
+      Write SQL queries with full TypeScript inference and compile-time validation.
+    </Card>
+    <Card
+      title="Schema definition"
+      icon="diagram-project"
+      href="/core/schema-declaration"
+    >
+      Define your database schema in TypeScript with intuitive builder syntax.
+    </Card>
+    <Card
+      title="Migrations"
+      icon="code-branch"
+      href="/core/migrations"
+    >
+      Generate and run migrations automatically with Drizzle Kit.
+    </Card>
+    <Card
+      title="Relations"
+      icon="link"
+      href="/core/relations"
+    >
+      Define and query table relationships with type-safe join operations.
+    </Card>
+    <Card
+      title="Transactions"
+      icon="arrows-rotate"
+      href="/core/transactions"
+    >
+      Execute multiple queries atomically with full ACID guarantees.
+    </Card>
+    <Card
+      title="Prepared statements"
+      icon="bolt"
+      href="/advanced/prepared-statements"
+    >
+      Optimize performance with reusable prepared statements.
+    </Card>
+  </CardGroup>
+</div>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      Ecosystem tools
+    </h2>
+    <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
+      Powerful tools to enhance your development workflow
+    </p>
+  </div>
 
-## Need inspiration?
+  <CardGroup cols={2}>
+    <Card
+      title="Drizzle Kit"
+      icon="toolbox"
+      href="/ecosystem/drizzle-kit"
+    >
+      CLI companion for schema migrations, introspection, and database management.
+    </Card>
+    <Card
+      title="Drizzle Studio"
+      icon="window"
+      href="/ecosystem/drizzle-studio"
+    >
+      Visual database browser to explore and manipulate your data effortlessly.
+    </Card>
+    <Card
+      title="Drizzle Seed"
+      icon="seedling"
+      href="/ecosystem/drizzle-seed"
+    >
+      Generate realistic test data and seed your database for development.
+    </Card>
+    <Card
+      title="Schema validation"
+      icon="check-double"
+      href="/ecosystem/schema-validation"
+    >
+      Integrate with Zod, Valibot, TypeBox, and ArkType for runtime validation.
+    </Card>
+  </CardGroup>
+</div>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#C5F74F]/10 to-[#A5D840]/10 dark:from-[#C5F74F]/10 dark:to-[#A5D840]/10 border border-[#C5F74F]/20 dark:border-[#C5F74F]/20 p-12 text-center">
+    <div className="relative z-10">
+      <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+        Ready to get started?
+      </h2>
+      <p className="text-lg text-gray-600 dark:text-gray-400 mb-8 max-w-2xl mx-auto">
+        Join thousands of developers building type-safe database applications with Drizzle ORM
+      </p>
+      <a 
+        href="/quickstart" 
+        className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#C5F74F] hover:bg-[#A5D840] text-black font-semibold text-lg transition-colors no-underline"
+      >
+        Start Building
+        <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+        </svg>
+      </a>
+    </div>
+  </div>
+</div>

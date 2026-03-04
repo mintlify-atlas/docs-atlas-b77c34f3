@@ -1,0 +1,225 @@
+---
+title: "Introduction to Drizzle ORM"
+description: "Headless TypeScript ORM for building type-safe, performant database applications"
+---
+
+## What is Drizzle ORM?
+
+Drizzle ORM is a lightweight, headless TypeScript ORM designed for developers who want the full power of SQL with complete type safety. At only **~7.4kb minified+gzipped** with **zero dependencies**, Drizzle is optimized for modern JavaScript runtimes and serverless environments.
+
+<Note>
+  Drizzle is not just another ORM - it's a thin, typed layer on top of SQL that preserves SQL's expressiveness while adding TypeScript's type safety.
+</Note>
+
+## Core philosophy
+
+Drizzle is built on three fundamental principles:
+
+<CardGroup cols={3}>
+  <Card title="SQL-like" icon="database">
+    Write queries that look and feel like SQL, not an abstraction layer
+  </Card>
+  <Card title="Type-safe" icon="shield-check">
+    Full TypeScript inference with compile-time validation
+  </Card>
+  <Card title="Lightweight" icon="feather">
+    Zero dependencies, tree-shakeable, optimized bundle size
+  </Card>
+</CardGroup>
+
+## Why choose Drizzle?
+
+### Serverless-ready by design
+
+Drizzle works seamlessly in **every major JavaScript runtime**:
+- Node.js
+- Bun
+- Deno
+- Cloudflare Workers
+- Supabase Edge Functions
+- Vercel Edge Runtime
+- AWS Lambda
+- Browser environments
+
+No special adapters, no Rust binaries, no data proxies - just pure JavaScript that works everywhere.
+
+### Universal database support
+
+Drizzle supports **all major SQL databases** with native drivers:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    - PostgreSQL (pg, postgres.js, node-postgres)
+    - Neon Serverless
+    - Vercel Postgres
+    - Supabase
+    - AWS Data API
+    - PGlite
+    - Electric SQL
+  </Tab>
+  <Tab title="MySQL">
+    - MySQL (mysql2)
+    - PlanetScale
+    - TiDB Serverless
+    - SingleStore
+  </Tab>
+  <Tab title="SQLite">
+    - better-sqlite3
+    - Bun SQLite
+    - Cloudflare D1
+    - Turso (libSQL)
+    - SQL.js
+    - Expo SQLite
+  </Tab>
+</Tabs>
+
+### Performance first
+
+Drizzle is designed for speed:
+- **Minimal overhead**: Direct SQL execution with minimal abstraction
+- **Prepared statements**: Reusable queries for optimal performance
+- **Query batching**: Execute multiple queries efficiently
+- **Tree-shakeable**: Only bundle what you use
+
+<Note>
+  Check out our [benchmarks](https://orm.drizzle.team/benchmarks) to see how Drizzle compares to other ORMs.
+</Note>
+
+## Type safety in action
+
+Drizzle provides **end-to-end type safety** from schema definition to query results:
+
+```typescript
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { eq } from 'drizzle-orm';
+
+// Define schema with full type inference
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+const db = drizzle(process.env.DATABASE_URL!);
+
+// Type-safe queries with autocomplete
+const result = await db.select().from(users).where(eq(users.id, 1));
+//    ^? { id: number; email: string; name: string; createdAt: Date | null }[]
+```
+
+Your IDE will provide:
+- **Autocomplete** for all columns and methods
+- **Type errors** for invalid queries at compile time
+- **IntelliSense** for available operations
+- **Refactoring support** when schema changes
+
+## Key features
+
+### SQL schema declaration
+
+Define your database schema in TypeScript with a declarative, type-safe API:
+
+```typescript
+import { pgTable, serial, text, integer, timestamp, index } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  authorId: integer('author_id').notNull().references(() => users.id),
+  publishedAt: timestamp('published_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('author_idx').on(table.authorId),
+]);
+```
+
+### Relational and SQL-like queries
+
+Write queries in two styles based on your preference:
+
+<CodeGroup>
+```typescript Relational queries
+// Fetch users with their posts in one query
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+```
+
+```typescript SQL-like queries
+// Traditional SQL-like syntax
+const usersWithPosts = await db
+  .select()
+  .from(users)
+  .leftJoin(posts, eq(posts.authorId, users.id));
+```
+</CodeGroup>
+
+### Automatic migrations
+
+Drizzle Kit generates SQL migrations automatically from your schema changes:
+
+```bash
+# Generate migration from schema changes
+npx drizzle-kit generate
+
+# Apply migrations to database
+npx drizzle-kit migrate
+
+# Push schema changes directly (development)
+npx drizzle-kit push
+```
+
+## Ecosystem
+
+Drizzle comes with powerful companion tools:
+
+<CardGroup cols={2}>
+  <Card title="Drizzle Kit" icon="toolbox" href="/ecosystem/drizzle-kit">
+    CLI for migrations, schema introspection, and database management
+  </Card>
+  <Card title="Drizzle Studio" icon="window" href="/ecosystem/drizzle-studio">
+    Visual database browser to explore and edit data
+  </Card>
+  <Card title="Drizzle Seed" icon="seedling" href="/ecosystem/drizzle-seed">
+    Generate realistic test data for development
+  </Card>
+  <Card title="Schema Validation" icon="check-double" href="/ecosystem/schema-validation">
+    Integrate with Zod, Valibot, TypeBox, and ArkType
+  </Card>
+</CardGroup>
+
+## Real-world usage
+
+Drizzle is trusted by thousands of developers and companies building production applications:
+
+- **Serverless applications** on Cloudflare Workers, Vercel Edge, AWS Lambda
+- **Full-stack applications** with Next.js, Remix, SvelteKit, Astro
+- **Mobile apps** with React Native and Expo
+- **Desktop apps** with Electron and Tauri
+- **CLI tools** and scripts
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Drizzle ORM and set up your project
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first Drizzle application in minutes
+  </Card>
+  <Card title="Schema Declaration" icon="diagram-project" href="/core/schema-declaration">
+    Learn how to define your database schema
+  </Card>
+  <Card title="Queries" icon="magnifying-glass" href="/core/queries">
+    Write type-safe queries with Drizzle
+  </Card>
+</CardGroup>
+
+<Note>
+  **New to SQL?** Drizzle's type-safe API makes SQL approachable while teaching you proper database concepts. You'll learn SQL naturally as you use Drizzle.
+</Note>

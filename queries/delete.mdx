@@ -1,0 +1,454 @@
+---
+title: Delete Queries
+description: Delete data from your database using Drizzle ORM's type-safe delete query builder with filtering and returning capabilities.
+---
+
+Drizzle ORM provides a type-safe API for deleting records from your database tables.
+
+## Basic Delete
+
+Delete rows with a where clause:
+
+```typescript
+import { db } from './db';
+import { users } from './schema';
+import { eq } from 'drizzle-orm';
+
+const result = await db.delete(users)
+  .where(eq(users.id, 1));
+```
+
+<Warning>
+Always include a `where()` clause unless you intentionally want to delete all rows in the table.
+</Warning>
+
+## Delete with Multiple Conditions
+
+Combine conditions to delete specific rows:
+
+```typescript
+import { and, eq, lt } from 'drizzle-orm';
+
+// Delete inactive users created before a certain date
+await db.delete(users)
+  .where(and(
+    eq(users.active, false),
+    lt(users.createdAt, new Date('2020-01-01'))
+  ));
+```
+
+## Delete with OR Conditions
+
+Delete rows matching any of several conditions:
+
+```typescript
+import { or, eq } from 'drizzle-orm';
+
+// Delete users with specific roles
+await db.delete(users)
+  .where(or(
+    eq(users.role, 'guest'),
+    eq(users.role, 'trial')
+  ));
+```
+
+## Delete with Returning
+
+Get the deleted row(s) back from the database:
+
+<CodeGroup>
+
+```typescript Return All Columns
+const [deletedUser] = await db.delete(users)
+  .where(eq(users.id, 1))
+  .returning();
+
+console.log('Deleted:', deletedUser);
+```
+
+```typescript Return Specific Columns
+const [result] = await db.delete(users)
+  .where(eq(users.id, 1))
+  .returning({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+  });
+
+// result: { id: number; name: string; email: string; }
+```
+
+```typescript Return Multiple Rows
+const deleted = await db.delete(users)
+  .where(eq(users.active, false))
+  .returning();
+
+console.log(`Deleted ${deleted.length} users`);
+```
+
+</CodeGroup>
+
+<Warning>
+`.returning()` is supported in PostgreSQL, SQLite, and MySQL 8.0+. It's not available in older MySQL versions.
+</Warning>
+
+## Delete by ID
+
+Common pattern for deleting by primary key:
+
+```typescript
+// Delete single user by id
+await db.delete(users)
+  .where(eq(users.id, 1));
+
+// Delete and return
+const [deleted] = await db.delete(users)
+  .where(eq(users.id, 1))
+  .returning();
+```
+
+## Delete Multiple Rows
+
+Delete rows using array of values:
+
+```typescript
+import { inArray } from 'drizzle-orm';
+
+// Delete multiple users by their IDs
+await db.delete(users)
+  .where(inArray(users.id, [1, 2, 3, 4, 5]));
+
+// Delete users with specific emails
+const emails = ['user1@example.com', 'user2@example.com'];
+await db.delete(users)
+  .where(inArray(users.email, emails));
+```
+
+## Delete All Rows
+
+Delete every row in a table (use with extreme caution):
+
+```typescript
+// Delete all users - BE VERY CAREFUL!
+await db.delete(users);
+```
+
+<Warning>
+Omitting the `where()` clause deletes ALL rows in the table. This operation cannot be undone. Always double-check before running such queries.
+</Warning>
+
+## Delete with Pattern Matching
+
+Delete based on pattern matching:
+
+```typescript
+import { like, ilike } from 'drizzle-orm';
+
+// Delete users with temporary email addresses
+await db.delete(users)
+  .where(like(users.email, '%+temp@%'));
+
+// Case-insensitive pattern match
+await db.delete(posts)
+  .where(ilike(posts.title, '%draft%'));
+```
+
+## Delete with Null Checks
+
+Delete based on null values:
+
+```typescript
+import { isNull, isNotNull } from 'drizzle-orm';
+
+// Delete users without email verification
+await db.delete(users)
+  .where(isNull(users.emailVerifiedAt));
+
+// Delete only rows with specific data
+await db.delete(sessions)
+  .where(isNotNull(sessions.expiresAt));
+```
+
+## Delete with Comparison Operators
+
+Delete using various comparison operators:
+
+<CodeGroup>
+
+```typescript Greater Than / Less Than
+import { gt, lt, lte } from 'drizzle-orm';
+
+// Delete old sessions
+await db.delete(sessions)
+  .where(lt(sessions.expiresAt, new Date()));
+
+// Delete high-price items
+await db.delete(products)
+  .where(gt(products.price, 1000));
+```
+
+```typescript Between
+import { between } from 'drizzle-orm';
+
+// Delete posts from a date range
+await db.delete(posts)
+  .where(between(
+    posts.createdAt,
+    new Date('2020-01-01'),
+    new Date('2020-12-31')
+  ));
+```
+
+```typescript Not Equal
+import { ne } from 'drizzle-orm';
+
+// Delete all users except admins
+await db.delete(users)
+  .where(ne(users.role, 'admin'));
+```
+
+</CodeGroup>
+
+## Delete with Subqueries
+
+Delete using subquery conditions:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Delete users who have no posts
+await db.delete(users)
+  .where(sql`NOT EXISTS (
+    SELECT 1 FROM ${posts} 
+    WHERE ${posts.userId} = ${users.id}
+  )`);
+
+// Delete inactive accounts
+await db.delete(users)
+  .where(sql`${users.id} IN (
+    SELECT user_id FROM inactive_accounts
+  )`);
+```
+
+## Soft Delete Pattern
+
+Instead of deleting, mark records as deleted:
+
+```typescript
+// Don't actually delete - just mark as deleted
+await db.update(users)
+  .set({ 
+    deletedAt: new Date(),
+    active: false,
+  })
+  .where(eq(users.id, 1));
+
+// Query only non-deleted records
+const activeUsers = await db.select()
+  .from(users)
+  .where(isNull(users.deletedAt));
+```
+
+<Note>
+Soft deletes preserve data and maintain referential integrity while allowing easy recovery.
+</Note>
+
+## Delete in Transactions
+
+Delete within a transaction for consistency:
+
+```typescript
+await db.transaction(async (tx) => {
+  // Delete user's posts first
+  await tx.delete(posts)
+    .where(eq(posts.userId, 1));
+
+  // Then delete the user
+  await tx.delete(users)
+    .where(eq(users.id, 1));
+
+  // If any operation fails, all are rolled back
+});
+```
+
+## Cascade Deletes
+
+Handle related data when deleting:
+
+<CodeGroup>
+
+```typescript Manual Cascade
+// Manually delete related records
+await db.transaction(async (tx) => {
+  const userId = 1;
+  
+  // Delete user's comments
+  await tx.delete(comments)
+    .where(eq(comments.userId, userId));
+  
+  // Delete user's posts
+  await tx.delete(posts)
+    .where(eq(posts.userId, userId));
+  
+  // Finally delete the user
+  await tx.delete(users)
+    .where(eq(users.id, userId));
+});
+```
+
+```typescript Database Cascade
+// If foreign keys are set with ON DELETE CASCADE in schema,
+// deleting the user will automatically delete related records
+await db.delete(users)
+  .where(eq(users.id, 1));
+// Posts and comments automatically deleted by database
+```
+
+</CodeGroup>
+
+## Conditional Delete Logic
+
+Build dynamic delete queries:
+
+```typescript
+const filters = {
+  inactive: true,
+  oldDate: new Date('2020-01-01'),
+};
+
+const conditions = [];
+if (filters.inactive) {
+  conditions.push(eq(users.active, false));
+}
+if (filters.oldDate) {
+  conditions.push(lt(users.createdAt, filters.oldDate));
+}
+
+if (conditions.length > 0) {
+  await db.delete(users)
+    .where(and(...conditions));
+}
+```
+
+## Delete with Limits (MySQL)
+
+Limit the number of rows deleted:
+
+```typescript
+// MySQL only: delete limited number of rows
+await db.delete(users)
+  .where(eq(users.active, false))
+  .limit(100);
+```
+
+<Note>
+LIMIT in DELETE is MySQL-specific. PostgreSQL and SQLite don't support this directly.
+</Note>
+
+## Type Safety
+
+Drizzle ensures type safety for deletes:
+
+```typescript
+await db.delete(users)
+  .where(eq(users.id, 1));
+  // TypeScript ensures column names are valid
+  // and types match
+```
+
+## Common Delete Patterns
+
+<Steps>
+  <Step title="Archive Before Delete">
+    ```typescript
+    await db.transaction(async (tx) => {
+      // Copy to archive
+      const [user] = await tx.select()
+        .from(users)
+        .where(eq(users.id, 1));
+      
+      await tx.insert(archivedUsers).values(user);
+      
+      // Then delete
+      await tx.delete(users).where(eq(users.id, 1));
+    });
+    ```
+  </Step>
+  
+  <Step title="Delete Expired Records">
+    ```typescript
+    await db.delete(sessions)
+      .where(lt(sessions.expiresAt, new Date()));
+    ```
+  </Step>
+  
+  <Step title="Cleanup Orphaned Records">
+    ```typescript
+    await db.delete(posts)
+      .where(sql`NOT EXISTS (
+        SELECT 1 FROM ${users} 
+        WHERE ${users.id} = ${posts.userId}
+      )`);
+    ```
+  </Step>
+  
+  <Step title="Delete Duplicates">
+    ```typescript
+    await db.delete(users)
+      .where(sql`id NOT IN (
+        SELECT MIN(id) 
+        FROM users 
+        GROUP BY email
+      )`);
+    ```
+  </Step>
+</Steps>
+
+## Safety Checklist
+
+<Check>
+  Always test delete queries in development first
+</Check>
+<Check>
+  Use transactions when deleting related records
+</Check>
+<Check>
+  Consider soft deletes for important data
+</Check>
+<Check>
+  Backup data before running bulk deletes
+</Check>
+<Check>
+  Use WHERE clauses to avoid accidental mass deletion
+</Check>
+
+## Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Index Where Columns" icon="gauge-high">
+    Ensure columns in WHERE clauses are indexed for faster deletes
+  </Card>
+  <Card title="Batch Deletes" icon="layer-group">
+    Use `inArray()` to delete multiple rows efficiently
+  </Card>
+  <Card title="Disable Triggers Temporarily" icon="bolt">
+    For bulk deletes, consider temporarily disabling triggers
+  </Card>
+  <Card title="Vacuum After Large Deletes" icon="broom">
+    Run VACUUM (PostgreSQL) or OPTIMIZE (MySQL) after deleting many rows
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Update Queries" href="/queries/update" icon="pen">
+    Learn about updating data
+  </Card>
+  <Card title="Select Queries" href="/queries/select" icon="magnifying-glass">
+    Query your data
+  </Card>
+  <Card title="Transactions" href="/core/transactions" icon="arrows-rotate">
+    Ensure data consistency with transactions
+  </Card>
+</CardGroup>

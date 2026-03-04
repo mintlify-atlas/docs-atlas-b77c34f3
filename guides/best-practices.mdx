@@ -1,0 +1,822 @@
+---
+title: "Best Practices"
+description: "Production-ready patterns for schema design, query optimization, and type safety with Drizzle ORM"
+---
+
+This guide covers battle-tested patterns and best practices for building robust, performant applications with Drizzle ORM.
+
+## Schema Design
+
+### Naming Conventions
+
+Establish consistent naming patterns across your schema:
+
+```typescript
+import { pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
+
+// Good: Singular table names, clear column names
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// Avoid: Inconsistent naming
+export const Users = pgTable('user', { // Mixed naming
+  ID: serial('user_id').primaryKey(), // Inconsistent ID column
+  EmailAddress: text('email'), // CamelCase in DB
+});
+```
+
+<Tip>
+**Table names**: Use plural, snake_case (users, blog_posts)  
+**Column names**: Use snake_case in database, camelCase in TypeScript  
+**Variable names**: Use camelCase for table references (users, blogPosts)
+</Tip>
+
+### Use Specific Column Types
+
+Choose the most appropriate column type for your data:
+
+```typescript
+import {
+  pgTable,
+  serial,
+  text,
+  varchar,
+  integer,
+  boolean,
+  timestamp,
+  jsonb,
+  decimal,
+} from 'drizzle-orm/pg-core';
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  
+  // Good: Specific length for known limits
+  sku: varchar('sku', { length: 50 }).notNull().unique(),
+  
+  // Good: text for unlimited content
+  description: text('description'),
+  
+  // Good: Appropriate numeric types
+  price: decimal('price', { precision: 10, scale: 2 }).notNull(),
+  stock: integer('stock').notNull().default(0),
+  
+  // Good: Boolean for true/false states
+  isActive: boolean('is_active').notNull().default(true),
+  
+  // Good: JSONB for structured data
+  metadata: jsonb('metadata').$type<{
+    color?: string;
+    size?: string;
+    tags?: string[];
+  }>(),
+  
+  // Good: Timestamp with timezone
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+```
+
+### Foreign Keys and Indexes
+
+Always add indexes to foreign keys and frequently queried columns:
+
+```typescript
+import { pgTable, serial, integer, text, index } from 'drizzle-orm/pg-core';
+import { users } from './users';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  authorId: integer('author_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('draft'),
+}, (table) => ({
+  // Index foreign keys
+  authorIdIdx: index('author_id_idx').on(table.authorId),
+  
+  // Index frequently filtered columns
+  statusIdx: index('status_idx').on(table.status),
+  
+  // Composite index for common query patterns
+  authorStatusIdx: index('author_status_idx').on(
+    table.authorId,
+    table.status
+  ),
+}));
+```
+
+<Warning>
+**PlanetScale**: Doesn't support foreign key constraints. Remove `.references()` and manage referential integrity in application code.
+</Warning>
+
+### Timestamps and Soft Deletes
+
+Implement standard timestamp patterns:
+
+```typescript
+import { pgTable, serial, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull(),
+  
+  // Creation timestamp
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  
+  // Auto-updating timestamp
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+  
+  // Soft delete
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});
+
+// Helper function to filter out deleted records
+import { isNull } from 'drizzle-orm';
+
+export function withoutDeleted() {
+  return isNull(users.deletedAt);
+}
+
+// Usage
+const activeUsers = await db.select()
+  .from(users)
+  .where(withoutDeleted());
+```
+
+### Type-Safe JSON Columns
+
+Define TypeScript types for JSON columns:
+
+```typescript
+import { pgTable, serial, jsonb } from 'drizzle-orm/pg-core';
+
+// Define your JSON structure
+interface UserPreferences {
+  theme: 'light' | 'dark';
+  notifications: {
+    email: boolean;
+    push: boolean;
+  };
+  language: string;
+}
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  
+  // Type-safe JSON column
+  preferences: jsonb('preferences')
+    .$type<UserPreferences>()
+    .notNull()
+    .default({
+      theme: 'light',
+      notifications: { email: true, push: false },
+      language: 'en',
+    }),
+});
+
+// TypeScript knows the structure
+const user = await db.select().from(users).limit(1);
+const theme = user[0].preferences.theme; // Type: 'light' | 'dark'
+```
+
+## Query Optimization
+
+### Use Prepared Statements
+
+Prepared statements improve performance for repeated queries:
+
+```typescript
+import { eq } from 'drizzle-orm';
+import { users } from './schema';
+
+// Create prepared statement once
+const getUserById = db.select()
+  .from(users)
+  .where(eq(users.id, sql.placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Execute multiple times efficiently
+const user1 = await getUserById.execute({ id: 1 });
+const user2 = await getUserById.execute({ id: 2 });
+const user3 = await getUserById.execute({ id: 3 });
+```
+
+### Select Only Needed Columns
+
+Avoid selecting entire rows when you only need specific fields:
+
+```typescript
+import { users, posts } from './schema';
+
+// Bad: Fetches all columns
+const allUsers = await db.select().from(users);
+
+// Good: Select only what you need
+const userEmails = await db.select({
+  id: users.id,
+  email: users.email,
+}).from(users);
+
+// Good: Computed columns
+const userStats = await db.select({
+  userId: users.id,
+  userName: users.name,
+  postCount: count(posts.id),
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.authorId))
+  .groupBy(users.id);
+```
+
+### Batch Operations
+
+Use batch inserts and queries to reduce round trips:
+
+```typescript
+import { users } from './schema';
+
+// Bad: Multiple individual inserts
+for (const user of newUsers) {
+  await db.insert(users).values(user);
+}
+
+// Good: Single batch insert
+await db.insert(users).values(newUsers);
+
+// Good: Batch queries (where supported)
+const [usersResult, postsResult, commentsResult] = await db.batch([
+  db.select().from(users),
+  db.select().from(posts),
+  db.select().from(comments),
+]);
+```
+
+### Pagination Patterns
+
+Implement efficient pagination:
+
+```typescript
+import { desc, gt } from 'drizzle-orm';
+import { posts } from './schema';
+
+// Offset-based pagination (simple but slow for large offsets)
+export async function getPostsOffset(page: number, pageSize: number) {
+  return await db.select()
+    .from(posts)
+    .orderBy(desc(posts.createdAt))
+    .limit(pageSize)
+    .offset(page * pageSize);
+}
+
+// Cursor-based pagination (recommended for large datasets)
+export async function getPostsCursor(
+  cursor: number | null,
+  pageSize: number
+) {
+  const query = db.select()
+    .from(posts)
+    .orderBy(desc(posts.id))
+    .limit(pageSize + 1); // Fetch one extra to check if there's more
+  
+  if (cursor) {
+    query.where(gt(posts.id, cursor));
+  }
+  
+  const results = await query;
+  const hasMore = results.length > pageSize;
+  const items = hasMore ? results.slice(0, -1) : results;
+  
+  return {
+    items,
+    nextCursor: hasMore ? items[items.length - 1].id : null,
+  };
+}
+```
+
+### Efficient Joins
+
+Use the right join type and avoid n+1 queries:
+
+```typescript
+import { eq } from 'drizzle-orm';
+import { users, posts, comments } from './schema';
+
+// Bad: N+1 query problem
+const users = await db.select().from(usersTable);
+for (const user of users) {
+  user.posts = await db.select()
+    .from(posts)
+    .where(eq(posts.authorId, user.id));
+}
+
+// Good: Use relational queries
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+
+// Good: Manual join when you need control
+const usersWithPostCount = await db.select({
+  id: users.id,
+  name: users.name,
+  postCount: count(posts.id),
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.authorId))
+  .groupBy(users.id);
+```
+
+## Type Safety
+
+### Infer Types from Schema
+
+Always use type inference instead of manual types:
+
+```typescript
+import { users } from './schema';
+
+// Good: Infer from schema
+type User = typeof users.$inferSelect;
+type NewUser = typeof users.$inferInsert;
+
+// Use in functions
+export async function createUser(data: NewUser): Promise<User> {
+  const [user] = await db.insert(users).values(data).returning();
+  return user;
+}
+
+// For partial updates
+type UserUpdate = Partial<NewUser>;
+
+export async function updateUser(
+  id: number,
+  data: UserUpdate
+): Promise<User> {
+  const [user] = await db.update(users)
+    .set(data)
+    .where(eq(users.id, id))
+    .returning();
+  return user;
+}
+```
+
+### Custom Type Helpers
+
+Create reusable type utilities:
+
+```typescript
+import type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+
+// Generic helpers
+export type SelectModel<T extends typeof users> = InferSelectModel<T>;
+export type InsertModel<T extends typeof users> = InferInsertModel<T>;
+
+// Make all fields optional for updates
+export type UpdateModel<T> = Partial<InsertModel<T>>;
+
+// Pick specific fields
+export type UserPublic = Pick<SelectModel<typeof users>, 'id' | 'name' | 'email'>;
+
+// Omit sensitive fields
+export type UserSafe = Omit<SelectModel<typeof users>, 'passwordHash'>;
+```
+
+### Validated Inputs with Zod
+
+Combine Drizzle with Zod for runtime validation:
+
+```typescript
+import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
+import { z } from 'zod';
+import { users } from './schema';
+
+// Generate Zod schemas from Drizzle tables
+const insertUserSchema = createInsertSchema(users, {
+  // Customize validation
+  email: z.string().email(),
+  name: z.string().min(2).max(100),
+});
+
+const selectUserSchema = createSelectSchema(users);
+
+// Use for API validation
+export async function createUserApi(input: unknown) {
+  // Validate input
+  const validated = insertUserSchema.parse(input);
+  
+  // Insert with validated data
+  const [user] = await db.insert(users)
+    .values(validated)
+    .returning();
+  
+  return user;
+}
+```
+
+## Connection Management
+
+### Pool Configuration
+
+Configure connection pools appropriately:
+
+```typescript
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+// Good: Proper pool configuration
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20, // Maximum connections
+  idleTimeoutMillis: 30000, // Close idle connections after 30s
+  connectionTimeoutMillis: 2000, // Fail fast
+});
+
+const db = drizzle(pool);
+
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Unexpected pool error', err);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  await pool.end();
+  process.exit(0);
+});
+```
+
+### Singleton Pattern
+
+Avoid creating multiple database instances:
+
+```typescript db.ts
+import { drizzle } from 'drizzle-orm/neon-http';
+import type { NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import * as schema from './schema';
+
+// Singleton pattern
+let db: NeonHttpDatabase<typeof schema> | null = null;
+
+export function getDb() {
+  if (!db) {
+    db = drizzle({
+      connection: process.env.DATABASE_URL!,
+      schema,
+    });
+  }
+  return db;
+}
+
+// Usage
+import { getDb } from './db';
+
+const db = getDb();
+const users = await db.select().from(usersTable);
+```
+
+### Environment-Specific Configuration
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  
+  // Production settings
+  ssl: isProduction ? { rejectUnauthorized: false } : undefined,
+  max: isProduction ? 20 : 5,
+  
+  // Development settings
+  idleTimeoutMillis: isProduction ? 30000 : 10000,
+});
+
+const db = drizzle(pool, {
+  logger: !isProduction, // Log queries in development
+});
+
+export { db };
+```
+
+## Error Handling
+
+### Graceful Error Recovery
+
+```typescript
+import { DatabaseError } from 'pg';
+import { users } from './schema';
+
+export async function createUser(email: string, name: string) {
+  try {
+    const [user] = await db.insert(users)
+      .values({ email, name })
+      .returning();
+    return { success: true, data: user };
+  } catch (error) {
+    // Handle unique constraint violation
+    if (error instanceof DatabaseError && error.code === '23505') {
+      return { 
+        success: false, 
+        error: 'Email already exists' 
+      };
+    }
+    
+    // Handle foreign key violation
+    if (error instanceof DatabaseError && error.code === '23503') {
+      return { 
+        success: false, 
+        error: 'Referenced record does not exist' 
+      };
+    }
+    
+    // Log unexpected errors
+    console.error('Database error:', error);
+    return { 
+      success: false, 
+      error: 'An unexpected error occurred' 
+    };
+  }
+}
+```
+
+### Transaction Error Handling
+
+```typescript
+import { users, posts } from './schema';
+
+export async function createUserWithPost(
+  userData: InsertModel<typeof users>,
+  postData: Omit<InsertModel<typeof posts>, 'authorId'>
+) {
+  try {
+    return await db.transaction(async (tx) => {
+      // Create user
+      const [user] = await tx.insert(users)
+        .values(userData)
+        .returning();
+      
+      // Create post
+      const [post] = await tx.insert(posts)
+        .values({ ...postData, authorId: user.id })
+        .returning();
+      
+      return { user, post };
+    });
+  } catch (error) {
+    // Transaction automatically rolled back
+    console.error('Transaction failed:', error);
+    throw error;
+  }
+}
+```
+
+## Testing
+
+### Test Database Setup
+
+```typescript test-utils.ts
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+let testDb: ReturnType<typeof drizzle>;
+let testPool: Pool;
+
+export async function setupTestDb() {
+  testPool = new Pool({
+    connectionString: process.env.TEST_DATABASE_URL,
+  });
+  
+  testDb = drizzle(testPool, { schema });
+  
+  // Run migrations
+  await migrate(testDb, { migrationsFolder: './drizzle' });
+  
+  return testDb;
+}
+
+export async function teardownTestDb() {
+  await testPool.end();
+}
+
+export async function resetTestDb() {
+  // Clear all tables
+  await testDb.delete(schema.posts);
+  await testDb.delete(schema.users);
+}
+```
+
+```typescript user.test.ts
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { setupTestDb, teardownTestDb, resetTestDb } from './test-utils';
+import { createUser } from './users';
+
+let db: Awaited<ReturnType<typeof setupTestDb>>;
+
+beforeAll(async () => {
+  db = await setupTestDb();
+});
+
+afterAll(async () => {
+  await teardownTestDb();
+});
+
+beforeEach(async () => {
+  await resetTestDb();
+});
+
+describe('User Creation', () => {
+  it('should create a user', async () => {
+    const result = await createUser('test@example.com', 'Test User');
+    
+    expect(result.success).toBe(true);
+    expect(result.data?.email).toBe('test@example.com');
+  });
+  
+  it('should reject duplicate emails', async () => {
+    await createUser('test@example.com', 'User 1');
+    const result = await createUser('test@example.com', 'User 2');
+    
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already exists');
+  });
+});
+```
+
+## Security
+
+### SQL Injection Prevention
+
+Drizzle prevents SQL injection by default, but be careful with raw SQL:
+
+```typescript
+import { sql, eq } from 'drizzle-orm';
+import { users } from './schema';
+
+// Safe: Parameterized query
+const user = await db.select()
+  .from(users)
+  .where(eq(users.email, userInput));
+
+// Dangerous: String interpolation
+const unsafe = await db.execute(
+  sql`SELECT * FROM users WHERE email = '${userInput}'` // DON'T DO THIS
+);
+
+// Safe: Use sql.placeholder or sql.raw carefully
+const safe = await db.execute(
+  sql`SELECT * FROM users WHERE email = ${userInput}` // Safe: parameterized
+);
+```
+
+### Row-Level Security
+
+Implement application-level RLS:
+
+```typescript
+import { eq, and } from 'drizzle-orm';
+import { posts } from './schema';
+
+export async function getUserPosts(userId: number, requestingUserId: number) {
+  return await db.select()
+    .from(posts)
+    .where(
+      and(
+        eq(posts.authorId, userId),
+        // Only show public posts or posts owned by requesting user
+        or(
+          eq(posts.isPublic, true),
+          eq(posts.authorId, requestingUserId)
+        )
+      )
+    );
+}
+```
+
+### Sensitive Data
+
+```typescript
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+import bcrypt from 'bcrypt';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+});
+
+// Never return password hashes
+export async function getUserById(id: number) {
+  return await db.select({
+    id: users.id,
+    email: users.email,
+    // Omit passwordHash
+  }).from(users).where(eq(users.id, id));
+}
+
+// Hash passwords before storing
+export async function createUser(email: string, password: string) {
+  const passwordHash = await bcrypt.hash(password, 10);
+  
+  const [user] = await db.insert(users)
+    .values({ email, passwordHash })
+    .returning({ id: users.id, email: users.email });
+  
+  return user;
+}
+```
+
+## Performance Monitoring
+
+### Custom Logger
+
+```typescript
+import { DefaultLogger, type Logger } from 'drizzle-orm';
+
+class PerformanceLogger extends DefaultLogger {
+  override logQuery(query: string, params: unknown[]): void {
+    const start = Date.now();
+    
+    // Log slow queries
+    setTimeout(() => {
+      const duration = Date.now() - start;
+      if (duration > 100) {
+        console.warn(`Slow query (${duration}ms):`, query);
+        console.warn('Params:', params);
+      }
+    }, 0);
+    
+    super.logQuery(query, params);
+  }
+}
+
+const db = drizzle(pool, {
+  logger: new PerformanceLogger(),
+});
+```
+
+### Query Execution Time
+
+```typescript
+export async function withTiming<T>(
+  queryFn: () => Promise<T>,
+  queryName: string
+): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await queryFn();
+    const duration = Date.now() - start;
+    console.log(`${queryName} took ${duration}ms`);
+    return result;
+  } catch (error) {
+    const duration = Date.now() - start;
+    console.error(`${queryName} failed after ${duration}ms:`, error);
+    throw error;
+  }
+}
+
+// Usage
+const users = await withTiming(
+  () => db.select().from(usersTable),
+  'fetch_all_users'
+);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Schema Design" icon="diagram-project" href="/essentials/schema">
+  Deep dive into schema definition
+</Card>
+
+<Card title="Query API" icon="code" href="/essentials/queries">
+  Master the query builder
+</Card>
+
+<Card title="Serverless Guide" icon="server" href="/guides/serverless">
+  Deploy to serverless platforms
+</Card>
+
+<Card title="Edge Runtime" icon="globe" href="/guides/edge-runtime">
+  Run at the edge worldwide
+</Card>
+
+</CardGroup>

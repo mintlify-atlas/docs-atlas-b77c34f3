@@ -1,0 +1,598 @@
+---
+title: MySQL Utilities
+description: API reference for MySQL utility functions and helpers in Drizzle ORM
+---
+
+Drizzle ORM provides various utility functions for working with MySQL schemas, tables, and query building.
+
+## Schema Utilities
+
+### getTableConfig()
+
+Extracts complete configuration from a table definition.
+
+```typescript
+getTableConfig(table: MySqlTable): {
+  columns: MySqlColumn[];
+  indexes: Index[];
+  foreignKeys: ForeignKey[];
+  checks: Check[];
+  primaryKeys: PrimaryKey[];
+  uniqueConstraints: UniqueConstraint[];
+  name: string;
+  schema: string | undefined;
+  baseName: string;
+}
+```
+
+<ParamField path="table" type="MySqlTable" required>
+  The table to extract configuration from.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { getTableConfig } from 'drizzle-orm/mysql-core';
+import { users } from './schema';
+
+const config = getTableConfig(users);
+
+console.log(config.name); // 'users'
+console.log(config.columns.length); // Number of columns
+console.log(config.indexes); // Array of indexes
+console.log(config.foreignKeys); // Array of foreign keys
+
+// Iterate over columns
+for (const column of config.columns) {
+  console.log(column.name, column.getSQLType());
+}
+
+// Check for specific index
+const hasEmailIndex = config.indexes.some(
+  idx => idx.config.columns.some(col => col.name === 'email')
+);
+```
+
+---
+
+### getViewConfig()
+
+Extracts configuration from a view definition.
+
+```typescript
+getViewConfig<TName extends string, TExisting extends boolean>(
+  view: MySqlView<TName, TExisting>
+): ViewConfig
+```
+
+<ParamField path="view" type="MySqlView" required>
+  The view to extract configuration from.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { getViewConfig } from 'drizzle-orm/mysql-core';
+import { activeUsersView } from './schema';
+
+const config = getViewConfig(activeUsersView);
+
+console.log(config.name);
+console.log(config.query);
+console.log(config.selectedFields);
+```
+
+---
+
+## Index Utilities
+
+### index()
+
+Creates an index definition.
+
+```typescript
+index(name?: string): IndexBuilder
+```
+
+<ParamField path="name" type="string" optional>
+  The name of the index. If not provided, a name will be generated.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { mysqlTable, int, varchar, index } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  email: varchar({ length: 255 }),
+  name: varchar({ length: 255 }),
+  createdAt: timestamp()
+}, (table) => [
+  // Named index
+  index('email_idx').on(table.email),
+  
+  // Auto-named index
+  index().on(table.name),
+  
+  // Composite index
+  index('name_created_idx').on(table.name, table.createdAt),
+  
+  // Index with algorithm
+  index('email_btree_idx').on(table.email).using('btree'),
+  
+  // Index with order
+  index('created_desc_idx').on(table.createdAt.desc())
+]);
+```
+
+---
+
+### uniqueIndex()
+
+Creates a unique index definition.
+
+```typescript
+uniqueIndex(name?: string): IndexBuilder
+```
+
+#### Examples
+
+```typescript
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  email: varchar({ length: 255 }),
+  username: varchar({ length: 100 })
+}, (table) => [
+  uniqueIndex('email_unique_idx').on(table.email),
+  uniqueIndex('username_unique_idx').on(table.username)
+]);
+```
+
+---
+
+### primaryKey()
+
+Defines a composite primary key.
+
+```typescript
+primaryKey(config: { columns: MySqlColumn[] }): PrimaryKeyBuilder
+```
+
+<ParamField path="config.columns" type="MySqlColumn[]" required>
+  Array of columns that form the composite primary key.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { primaryKey } from 'drizzle-orm/mysql-core';
+
+export const userRoles = mysqlTable('user_roles', {
+  userId: int().notNull(),
+  roleId: int().notNull(),
+  assignedAt: timestamp().notNull()
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] })
+]);
+```
+
+---
+
+### foreignKey()
+
+Defines a foreign key constraint.
+
+```typescript
+foreignKey(config: {
+  columns: MySqlColumn[];
+  foreignColumns: MySqlColumn[];
+  name?: string;
+}): ForeignKeyBuilder
+```
+
+<ParamField path="config.columns" type="MySqlColumn[]" required>
+  Columns in the current table.
+</ParamField>
+
+<ParamField path="config.foreignColumns" type="MySqlColumn[]" required>
+  Referenced columns in the foreign table.
+</ParamField>
+
+<ParamField path="config.name" type="string" optional>
+  Name for the foreign key constraint.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { foreignKey } from 'drizzle-orm/mysql-core';
+
+export const posts = mysqlTable('posts', {
+  id: int().primaryKey(),
+  authorId: int().notNull(),
+  categoryId: int()
+}, (table) => [
+  // Basic foreign key
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id]
+  }),
+  
+  // With cascade delete
+  foreignKey({
+    columns: [table.authorId],
+    foreignColumns: [users.id]
+  }).onDelete('cascade'),
+  
+  // Named constraint
+  foreignKey({
+    columns: [table.categoryId],
+    foreignColumns: [categories.id],
+    name: 'posts_category_fk'
+  }).onDelete('set null')
+]);
+```
+
+---
+
+### unique()
+
+Defines a unique constraint.
+
+```typescript
+unique(name?: string): UniqueConstraintBuilder
+```
+
+#### Examples
+
+```typescript
+import { unique } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  email: varchar({ length: 255 }),
+  tenantId: int(),
+  username: varchar({ length: 100 })
+}, (table) => [
+  // Single column unique
+  unique('email_unique').on(table.email),
+  
+  // Composite unique constraint
+  unique('tenant_username_unique').on(table.tenantId, table.username)
+]);
+```
+
+---
+
+### check()
+
+Defines a check constraint.
+
+```typescript
+check(name: string, condition: SQL): CheckBuilder
+```
+
+<ParamField path="name" type="string" required>
+  Name of the check constraint.
+</ParamField>
+
+<ParamField path="condition" type="SQL" required>
+  The check condition as a SQL expression.
+</ParamField>
+
+#### Examples
+
+```typescript
+import { check, sql } from 'drizzle-orm/mysql-core';
+
+export const products = mysqlTable('products', {
+  id: int().primaryKey(),
+  price: decimal({ precision: 10, scale: 2 }),
+  discountPercent: int(),
+  stock: int()
+}, (table) => [
+  check('price_positive', sql`${table.price} > 0`),
+  check('valid_discount', sql`${table.discountPercent} BETWEEN 0 AND 100`),
+  check('stock_non_negative', sql`${table.stock} >= 0`)
+]);
+```
+
+---
+
+## Query Utilities
+
+### QueryBuilder
+
+Helper class for building queries programmatically.
+
+```typescript
+const qb = new QueryBuilder();
+
+const query = qb.select()
+  .from(users)
+  .where(eq(users.status, 'active'));
+```
+
+---
+
+### sql
+
+Template tag for raw SQL expressions.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Raw SQL in select
+await db.select({
+  id: users.id,
+  upperName: sql<string>`UPPER(${users.name})`
+}).from(users);
+
+// Raw SQL in where clause
+await db.select()
+  .from(users)
+  .where(sql`${users.createdAt} > DATE_SUB(NOW(), INTERVAL 1 DAY)`);
+
+// Parameterized SQL
+const name = 'John';
+await db.select()
+  .from(users)
+  .where(sql`${users.name} = ${name}`);
+```
+
+---
+
+### sql.placeholder()
+
+Creates a placeholder for prepared statements.
+
+```typescript
+sql.placeholder(name: string): Placeholder
+```
+
+#### Examples
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const stmt = db.select()
+  .from(users)
+  .where(sql`${users.id} = ${sql.placeholder('userId')}`)
+  .prepare();
+
+await stmt.execute({ userId: 1 });
+await stmt.execute({ userId: 2 });
+```
+
+---
+
+### sql.raw()
+
+Creates a SQL expression from a raw string.
+
+```typescript
+sql.raw(query: string): SQL
+```
+
+<Warning>
+Use `sql.raw()` with caution. It bypasses parameter binding and can be vulnerable to SQL injection if used with user input.
+</Warning>
+
+#### Examples
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Safe: no user input
+await db.execute(sql.raw('OPTIMIZE TABLE users'));
+
+// Unsafe: don't do this with user input!
+// const userId = getUserInput();
+// await db.execute(sql.raw(`SELECT * FROM users WHERE id = ${userId}`));
+
+// Safe alternative: use parameterized queries
+const userId = getUserInput();
+await db.execute(sql`SELECT * FROM users WHERE id = ${userId}`);
+```
+
+---
+
+## Type Utilities
+
+### InferSelectModel
+
+Infers the TypeScript type for SELECT operations.
+
+```typescript
+import { type InferSelectModel } from 'drizzle-orm';
+
+const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  name: varchar({ length: 255 }).notNull(),
+  email: varchar({ length: 255 }),
+  createdAt: timestamp().notNull().defaultNow()
+});
+
+type User = InferSelectModel<typeof users>;
+// { id: number; name: string; email: string | null; createdAt: Date }
+```
+
+---
+
+### InferInsertModel
+
+Infers the TypeScript type for INSERT operations.
+
+```typescript
+import { type InferInsertModel } from 'drizzle-orm';
+
+type NewUser = InferInsertModel<typeof users>;
+// { id?: number; name: string; email?: string | null; createdAt?: Date }
+
+const newUser: NewUser = {
+  name: 'John',
+  email: 'john@example.com'
+  // id and createdAt are optional
+};
+```
+
+---
+
+## Helper Functions
+
+### extractUsedTable()
+
+Extracts table names from a table reference, subquery, or SQL expression.
+
+```typescript
+extractUsedTable(
+  table: MySqlTable | Subquery | MySqlViewBase | SQL
+): string[]
+```
+
+#### Examples
+
+```typescript
+import { extractUsedTable } from 'drizzle-orm/mysql-core/utils';
+import { users } from './schema';
+
+const tables = extractUsedTable(users);
+console.log(tables); // ['users']
+
+const sq = db.select().from(users).as('sq');
+const subqueryTables = extractUsedTable(sq);
+console.log(subqueryTables); // ['users']
+```
+
+---
+
+### convertIndexToString()
+
+Converts index builders or names to string array.
+
+```typescript
+convertIndexToString(indexes: IndexForHint[]): string[]
+```
+
+#### Examples
+
+```typescript
+import { convertIndexToString } from 'drizzle-orm/mysql-core/utils';
+
+const emailIdx = index('email_idx').on(users.email);
+const nameIdx = index('name_idx').on(users.name);
+
+const indexNames = convertIndexToString([emailIdx, nameIdx, 'custom_idx']);
+console.log(indexNames); // ['email_idx', 'name_idx', 'custom_idx']
+```
+
+---
+
+## Column Helpers
+
+These functions are available on column builders:
+
+### $type()
+
+Overrides the inferred TypeScript type.
+
+```typescript
+json().$type<{ name: string; age: number }>()
+varchar({ length: 50 }).$type<'admin' | 'user' | 'guest'>()
+```
+
+---
+
+### $default()
+
+Sets a runtime default value.
+
+```typescript
+timestamp().$default(() => new Date())
+varchar({ length: 36 }).$default(() => crypto.randomUUID())
+```
+
+---
+
+### $onUpdate()
+
+Sets a runtime update value.
+
+```typescript
+timestamp().$onUpdate(() => new Date())
+```
+
+---
+
+## Alias Utilities
+
+### alias()
+
+Creates an alias for a table, useful for self-joins.
+
+```typescript
+import { alias } from 'drizzle-orm/mysql-core';
+
+const users = mysqlTable('users', {
+  id: int().primaryKey(),
+  name: varchar({ length: 255 }),
+  managerId: int()
+});
+
+const managers = alias(users, 'managers');
+
+// Self-join to get user with their manager
+const result = await db.select({
+  userName: users.name,
+  managerName: managers.name
+})
+.from(users)
+.leftJoin(managers, eq(users.managerId, managers.id));
+```
+
+---
+
+## Migration Utilities
+
+These utilities are used internally by the migration system but can be useful for custom migration tools:
+
+### getTableName()
+
+Gets the fully qualified table name.
+
+```typescript
+import { getTableName } from 'drizzle-orm';
+import { users } from './schema';
+
+const tableName = getTableName(users);
+console.log(tableName); // 'users' or 'schema.users' if schema is defined
+```
+
+---
+
+## Connection Utilities
+
+### withReplicas()
+
+Configures read replicas for the database connection. See [Database](/api/mysql/database#withReplicas) documentation for details.
+
+---
+
+## Best Practices
+
+<Tip>
+**Use typed models**: Always use `InferSelectModel` and `InferInsertModel` to maintain type safety throughout your application.
+</Tip>
+
+<Tip>
+**Parameterized queries**: Use the `sql` template tag with interpolation instead of `sql.raw()` to prevent SQL injection.
+</Tip>
+
+<Warning>
+**Raw SQL**: Only use `sql.raw()` with static strings or trusted input. Never use it with user-provided data.
+</Warning>
+
+<Note>
+**Schema introspection**: Use `getTableConfig()` to programmatically inspect table definitions for documentation, validation, or code generation.
+</Note>

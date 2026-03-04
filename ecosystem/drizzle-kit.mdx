@@ -1,0 +1,442 @@
+---
+title: "Drizzle Kit"
+description: "CLI tool for database migrations, schema introspection, and development workflow with Drizzle ORM"
+---
+
+Drizzle Kit is the essential CLI companion for Drizzle ORM that handles database migrations, schema introspection, and developer tooling. It automatically generates SQL migrations by comparing your schema changes and handles ~95% of edge cases like renames and deletions through intelligent prompting.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install -D drizzle-kit
+```
+
+```bash pnpm
+pnpm add -D drizzle-kit
+```
+
+```bash yarn
+yarn add -D drizzle-kit
+```
+
+```bash bun
+bun add -D drizzle-kit
+```
+</CodeGroup>
+
+## Configuration
+
+Create a `drizzle.config.ts` file in your project root:
+
+```typescript drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql', // 'postgresql' | 'mysql' | 'sqlite' | 'turso' | 'singlestore'
+  schema: './src/db/schema.ts',
+  out: './drizzle',
+  dbCredentials: {
+    host: process.env.DB_HOST!,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+});
+```
+
+<Note>
+You can also use a `drizzle.config.js` file or specify configuration via CLI options.
+</Note>
+
+## Core Commands
+
+### Generate Migrations
+
+Generate SQL migration files from your schema changes:
+
+```bash
+drizzle-kit generate
+```
+
+**How it works:**
+1. Drizzle Kit reads your schema file
+2. Compares it with the previous snapshot (if exists)
+3. Generates SQL migration files for the differences
+4. Prompts you for input on ambiguous cases (renames, etc.)
+
+**Options:**
+- `--config` - Path to config file
+- `--schema` - Path to schema file(s)
+- `--out` - Output directory for migrations (default: `drizzle`)
+- `--name` - Custom migration name
+- `--custom` - Create empty migration file for custom SQL
+- `--dialect` - Database dialect
+- `--breakpoints` - Add SQL breakpoints
+
+**Example:**
+```bash
+drizzle-kit generate --name add_users_table --custom
+```
+
+### Push Schema
+
+Push schema changes directly to the database without generating migration files:
+
+```bash
+drizzle-kit push
+```
+
+<Warning>
+Push is designed for rapid prototyping and local development. Always use migrations in production environments.
+</Warning>
+
+**Options:**
+- `--strict` - Always ask for confirmation
+- `--force` - Auto-approve all data loss statements
+- `--verbose` - Print all SQL statements
+
+**Use cases:**
+- Local development and prototyping
+- Testing schema changes quickly
+- Syncing schema to preview environments
+
+### Apply Migrations
+
+Apply pending migrations to your database:
+
+```bash
+drizzle-kit migrate
+```
+
+This command:
+1. Connects to your database
+2. Creates migrations table if it doesn't exist
+3. Runs all pending migrations in order
+4. Updates the migrations table
+
+### Introspect Database
+
+Generate Drizzle schema from an existing database (also known as `pull`):
+
+```bash
+drizzle-kit introspect
+# or
+drizzle-kit pull
+```
+
+**Options:**
+- `--introspect-casing` - Choose casing: `camel` or `preserve`
+- `--tablesFilter` - Filter specific tables
+- `--schemaFilters` - Filter specific schemas
+
+**Example:**
+```bash
+drizzle-kit introspect --introspect-casing camel --tablesFilter "users,posts"
+```
+
+This generates TypeScript schema files from your database structure, perfect for:
+- Migrating to Drizzle from another ORM
+- Working with existing databases
+- Keeping schema in sync with database changes
+
+### Check Migrations
+
+Validate migration files for consistency:
+
+```bash
+drizzle-kit check
+```
+
+Verifies that migration files are valid and haven't been corrupted.
+
+### Drop Migration
+
+Remove the last generated migration:
+
+```bash
+drizzle-kit drop
+```
+
+<Warning>
+This only removes the migration file, it doesn't rollback applied migrations in the database.
+</Warning>
+
+## Database Dialects
+
+Drizzle Kit supports multiple database dialects:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```typescript drizzle.config.ts
+    export default defineConfig({
+      dialect: 'postgresql',
+      dbCredentials: {
+        host: 'localhost',
+        port: 5432,
+        user: 'postgres',
+        password: 'password',
+        database: 'mydb',
+        ssl: false,
+      },
+    });
+    ```
+
+    Supports drivers:
+    - `aws-data-api` - AWS RDS Data API
+    - `pglite` - PGlite
+  </Tab>
+
+  <Tab title="MySQL">
+    ```typescript drizzle.config.ts
+    export default defineConfig({
+      dialect: 'mysql',
+      dbCredentials: {
+        host: 'localhost',
+        port: 3306,
+        user: 'root',
+        password: 'password',
+        database: 'mydb',
+      },
+    });
+    ```
+  </Tab>
+
+  <Tab title="SQLite">
+    ```typescript drizzle.config.ts
+    export default defineConfig({
+      dialect: 'sqlite',
+      dbCredentials: {
+        url: './dev.db',
+      },
+    });
+    ```
+  </Tab>
+
+  <Tab title="Turso">
+    ```typescript drizzle.config.ts
+    export default defineConfig({
+      dialect: 'turso',
+      dbCredentials: {
+        url: process.env.TURSO_URL!,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Migration Workflow
+
+<Steps>
+  <Step title="Define your schema">
+    Create or modify your schema file:
+
+    ```typescript src/db/schema.ts
+    import { pgTable, serial, varchar, index } from 'drizzle-orm/pg-core';
+
+    export const users = pgTable('users', {
+      id: serial('id').primaryKey(),
+      name: varchar('name', { length: 256 }).notNull(),
+      email: varchar('email', { length: 256 }).notNull(),
+    }, (table) => ({
+      emailIdx: index('email_idx').on(table.email),
+    }));
+    ```
+  </Step>
+
+  <Step title="Generate migration">
+    Run the generate command:
+
+    ```bash
+    drizzle-kit generate
+    ```
+
+    This creates a migration file in your output directory:
+
+    ```sql drizzle/0000_users_table.sql
+    CREATE TABLE IF NOT EXISTS "users" (
+      "id" serial PRIMARY KEY,
+      "name" varchar(256) NOT NULL,
+      "email" varchar(256) NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS "email_idx" ON "users" ("email");
+    ```
+  </Step>
+
+  <Step title="Review migration">
+    Inspect the generated SQL to ensure it matches your intentions. You can edit the migration file if needed.
+  </Step>
+
+  <Step title="Apply migration">
+    Run the migrate command to apply changes:
+
+    ```bash
+    drizzle-kit migrate
+    ```
+
+    Or apply migrations programmatically in your application:
+
+    ```typescript
+    import { drizzle } from 'drizzle-orm/node-postgres';
+    import { migrate } from 'drizzle-orm/node-postgres/migrator';
+    import { Pool } from 'pg';
+
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const db = drizzle(pool);
+
+    await migrate(db, { migrationsFolder: './drizzle' });
+    ```
+  </Step>
+</Steps>
+
+## Common Patterns
+
+### Environment-based Configuration
+
+```typescript drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema.ts',
+  out: './drizzle',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+  // Use verbose mode in development
+  verbose: process.env.NODE_ENV === 'development',
+  // Use strict mode in production
+  strict: process.env.NODE_ENV === 'production',
+});
+```
+
+### Multiple Schema Files
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: [
+    './src/db/users.schema.ts',
+    './src/db/posts.schema.ts',
+    './src/db/comments.schema.ts',
+  ],
+  out: './drizzle',
+});
+```
+
+### Custom Migration Prefixes
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema.ts',
+  out: './drizzle',
+  migrations: {
+    prefix: 'timestamp', // 'index' | 'timestamp' | 'supabase' | 'unix'
+  },
+});
+```
+
+### Table Filters for Introspection
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema.ts',
+  out: './drizzle',
+  introspect: {
+    casing: 'camel',
+  },
+  tablesFilter: ['users', 'posts', 'comments'],
+  schemaFilter: ['public'],
+});
+```
+
+## Package Scripts
+
+Add these scripts to your `package.json` for convenience:
+
+```json package.json
+{
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:pull": "drizzle-kit introspect",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "drizzle-kit check",
+    "db:drop": "drizzle-kit drop"
+  }
+}
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Version control migrations">
+    Always commit migration files to version control. They represent your database history.
+  </Step>
+
+  <Step title="Never edit applied migrations">
+    Once a migration has been applied to production, create a new migration for changes instead of editing the existing one.
+  </Step>
+
+  <Step title="Test migrations">
+    Test migrations in development and staging before applying to production.
+  </Step>
+
+  <Step title="Use push for development">
+    Use `drizzle-kit push` for rapid development, but switch to migrations before deploying.
+  </Step>
+
+  <Step title="Review generated SQL">
+    Always review the generated SQL before applying migrations to production.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Migration conflicts
+
+If you encounter migration conflicts when working in a team:
+
+```bash
+# Pull latest changes
+git pull
+
+# If conflicts exist, regenerate migration
+drizzle-kit drop  # Remove your local migration
+drizzle-kit generate  # Generate new migration
+```
+
+### Connection issues
+
+Verify your database credentials:
+
+```bash
+drizzle-kit push --verbose
+```
+
+The verbose flag shows connection details and SQL statements.
+
+### Schema validation
+
+If you get schema validation errors, ensure your `drizzle-orm` version is compatible:
+
+```bash
+npm list drizzle-orm drizzle-kit
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Drizzle Studio" icon="desktop" href="/ecosystem/drizzle-studio">
+    Explore your database with the visual database browser
+  </Card>
+  <Card title="Migrations Guide" icon="book" href="/guides/migrations">
+    Learn advanced migration patterns and strategies
+  </Card>
+</CardGroup>

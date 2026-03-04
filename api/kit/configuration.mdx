@@ -1,0 +1,707 @@
+---
+title: Configuration
+description: Complete reference for drizzle.config.ts configuration options including database credentials, migrations, and advanced settings.
+---
+
+Drizzle Kit configuration is defined in `drizzle.config.ts` (or `.js`/`.json`) at the root of your project.
+
+## Quick Start
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/schema.ts',
+  out: './drizzle',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+## Configuration API
+
+### defineConfig
+
+Type-safe configuration helper function.
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  // Configuration options
+});
+```
+
+## Core Options
+
+### dialect
+
+<ParamField path="dialect" type="string" required>
+  Database dialect for all commands.
+  
+  **Type:** `'postgresql' | 'mysql' | 'sqlite' | 'turso' | 'singlestore' | 'gel'`
+  
+  ```typescript
+  export default defineConfig({
+    dialect: 'postgresql',
+  });
+  ```
+</ParamField>
+
+### schema
+
+<ParamField path="schema" type="string | string[]">
+  Path(s) to your schema files. Supports glob patterns.
+  
+  ```typescript
+  // Single file
+  export default defineConfig({
+    schema: './src/schema.ts',
+  });
+  
+  // Multiple files
+  export default defineConfig({
+    schema: ['./src/schema/*.ts', './src/models/*.ts'],
+  });
+  
+  // Glob pattern
+  export default defineConfig({
+    schema: './src/db/**/*.schema.ts',
+  });
+  ```
+</ParamField>
+
+### out
+
+<ParamField path="out" type="string" default="drizzle">
+  Output folder for migrations and introspection files.
+  
+  ```typescript
+  export default defineConfig({
+    out: './migrations',
+  });
+  ```
+</ParamField>
+
+### driver
+
+<ParamField path="driver" type="string">
+  Explicit driver for specific database environments.
+  
+  **Type:** `'aws-data-api' | 'd1-http' | 'expo' | 'pglite' | 'durable-sqlite'`
+  
+  Only required for specific drivers:
+  - `aws-data-api`: AWS RDS Data API
+  - `d1-http`: Cloudflare D1
+  - `expo`: React Native Expo SQLite
+  - `pglite`: PGlite (in-process Postgres)
+  - `durable-sqlite`: Durable Objects SQLite
+  
+  ```typescript
+  export default defineConfig({
+    dialect: 'postgresql',
+    driver: 'aws-data-api',
+    dbCredentials: {
+      database: 'mydb',
+      secretArn: process.env.SECRET_ARN!,
+      resourceArn: process.env.RESOURCE_ARN!,
+    },
+  });
+  ```
+</ParamField>
+
+## Database Credentials
+
+### PostgreSQL
+
+<Tabs>
+  <Tab title="Connection String">
+    ```typescript
+    export default defineConfig({
+      dialect: 'postgresql',
+      dbCredentials: {
+        url: process.env.DATABASE_URL!,
+      },
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Connection Parameters">
+    ```typescript
+    export default defineConfig({
+      dialect: 'postgresql',
+      dbCredentials: {
+        host: 'localhost',
+        port: 5432,
+        user: 'postgres',
+        password: 'password',
+        database: 'mydb',
+        ssl: false,
+      },
+    });
+    ```
+    
+    <ParamField path="dbCredentials.host" type="string" required>
+      Database host
+    </ParamField>
+    
+    <ParamField path="dbCredentials.port" type="number" default={5432}>
+      Database port
+    </ParamField>
+    
+    <ParamField path="dbCredentials.user" type="string">
+      Database user
+    </ParamField>
+    
+    <ParamField path="dbCredentials.password" type="string">
+      Database password
+    </ParamField>
+    
+    <ParamField path="dbCredentials.database" type="string" required>
+      Database name
+    </ParamField>
+    
+    <ParamField path="dbCredentials.ssl" type="boolean | string | object">
+      SSL configuration
+      
+      **Type:** `boolean | 'require' | 'allow' | 'prefer' | 'verify-full' | ConnectionOptions`
+      
+      ```typescript
+      // Boolean
+      ssl: true
+      
+      // String mode
+      ssl: 'require'
+      
+      // Full SSL options
+      ssl: {
+        rejectUnauthorized: true,
+        ca: fs.readFileSync('./ca.pem').toString(),
+        key: fs.readFileSync('./client-key.pem').toString(),
+        cert: fs.readFileSync('./client-cert.pem').toString(),
+      }
+      ```
+    </ParamField>
+  </Tab>
+  
+  <Tab title="AWS Data API">
+    ```typescript
+    export default defineConfig({
+      dialect: 'postgresql',
+      driver: 'aws-data-api',
+      dbCredentials: {
+        database: 'mydb',
+        secretArn: process.env.SECRET_ARN!,
+        resourceArn: process.env.RESOURCE_ARN!,
+      },
+    });
+    ```
+    
+    <ParamField path="dbCredentials.database" type="string" required>
+      Database name
+    </ParamField>
+    
+    <ParamField path="dbCredentials.secretArn" type="string" required>
+      AWS Secrets Manager ARN
+    </ParamField>
+    
+    <ParamField path="dbCredentials.resourceArn" type="string" required>
+      AWS RDS cluster ARN
+    </ParamField>
+  </Tab>
+  
+  <Tab title="PGlite">
+    ```typescript
+    export default defineConfig({
+      dialect: 'postgresql',
+      driver: 'pglite',
+      dbCredentials: {
+        url: './local.db',
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### MySQL / SingleStore
+
+<Tabs>
+  <Tab title="Connection String">
+    ```typescript
+    export default defineConfig({
+      dialect: 'mysql',
+      dbCredentials: {
+        url: process.env.DATABASE_URL!,
+      },
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Connection Parameters">
+    ```typescript
+    export default defineConfig({
+      dialect: 'mysql',
+      dbCredentials: {
+        host: 'localhost',
+        port: 3306,
+        user: 'root',
+        password: 'password',
+        database: 'mydb',
+      },
+    });
+    ```
+    
+    <ParamField path="dbCredentials.ssl" type="string | object">
+      SSL configuration
+      
+      ```typescript
+      ssl: {
+        ca: fs.readFileSync('./ca.pem').toString(),
+        key: fs.readFileSync('./client-key.pem').toString(),
+        cert: fs.readFileSync('./client-cert.pem').toString(),
+        rejectUnauthorized: true,
+      }
+      ```
+    </ParamField>
+  </Tab>
+</Tabs>
+
+### SQLite
+
+<Tabs>
+  <Tab title="Local File">
+    ```typescript
+    export default defineConfig({
+      dialect: 'sqlite',
+      dbCredentials: {
+        url: './local.db',
+      },
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Cloudflare D1">
+    ```typescript
+    export default defineConfig({
+      dialect: 'sqlite',
+      driver: 'd1-http',
+      dbCredentials: {
+        accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+        databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+        token: process.env.CLOUDFLARE_API_TOKEN!,
+      },
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Expo">
+    ```typescript
+    export default defineConfig({
+      dialect: 'sqlite',
+      driver: 'expo',
+      // No credentials needed
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Turso (LibSQL)
+
+```typescript
+export default defineConfig({
+  dialect: 'turso',
+  dbCredentials: {
+    url: process.env.TURSO_DATABASE_URL!,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  },
+});
+```
+
+<ParamField path="dbCredentials.url" type="string" required>
+  Turso database URL
+</ParamField>
+
+<ParamField path="dbCredentials.authToken" type="string">
+  Turso authentication token
+</ParamField>
+
+## Migration Options
+
+### migrations
+
+<ParamField path="migrations" type="object">
+  Configure migration storage and file naming.
+  
+  ```typescript
+  export default defineConfig({
+    migrations: {
+      table: 'migrations',
+      schema: 'drizzle',
+      prefix: 'timestamp',
+    },
+  });
+  ```
+</ParamField>
+
+<ParamField path="migrations.table" type="string" default="__drizzle_migrations">
+  Custom migrations table name.
+  
+  ```typescript
+  migrations: {
+    table: 'custom_migrations',
+  }
+  ```
+</ParamField>
+
+<ParamField path="migrations.schema" type="string" default="drizzle">
+  Custom schema for migrations table (PostgreSQL only).
+  
+  ```typescript
+  migrations: {
+    schema: 'public',
+  }
+  ```
+</ParamField>
+
+<ParamField path="migrations.prefix" type="string" default="index">
+  Migration file naming prefix.
+  
+  **Type:** `'index' | 'timestamp' | 'supabase' | 'unix' | 'none'`
+  
+  ```typescript
+  migrations: {
+    prefix: 'timestamp',
+  }
+  ```
+  
+  **Examples:**
+  - `index`: `0001_migration.sql`, `0002_migration.sql`
+  - `timestamp`: `20240304120000_migration.sql`
+  - `supabase`: `20240304120000_migration.sql` (Supabase format)
+  - `unix`: `1709553600_migration.sql`
+  - `none`: `migration.sql`
+</ParamField>
+
+### breakpoints
+
+<ParamField path="breakpoints" type="boolean" default={true}>
+  Enable/disable SQL breakpoints in migrations.
+  
+  Required for databases that don't support multiple DDL statements in one transaction (MySQL, SQLite, SingleStore).
+  
+  ```typescript
+  export default defineConfig({
+    breakpoints: true,
+  });
+  ```
+</ParamField>
+
+## Filtering Options
+
+### tablesFilter
+
+<ParamField path="tablesFilter" type="string | string[]">
+  Filter tables using glob patterns.
+  
+  Useful for multi-project schemas or excluding specific tables.
+  
+  ```typescript
+  export default defineConfig({
+    // Single filter
+    tablesFilter: 'project1_*',
+    
+    // Multiple filters
+    tablesFilter: ['users_*', 'posts_*'],
+    
+    // Exclude tables
+    tablesFilter: ['!internal_*', '*'],
+  });
+  ```
+</ParamField>
+
+### schemaFilter
+
+<ParamField path="schemaFilter" type="string | string[]" default={["public"]}>
+  PostgreSQL schema filters for introspect/push commands.
+  
+  ```typescript
+  export default defineConfig({
+    // Single schema
+    schemaFilter: 'public',
+    
+    // Multiple schemas
+    schemaFilter: ['public', 'auth', 'api'],
+  });
+  ```
+</ParamField>
+
+### extensionsFilters
+
+<ParamField path="extensionsFilters" type="'postgis'[]">
+  Filter out extension-related internal tables.
+  
+  ```typescript
+  export default defineConfig({
+    extensionsFilters: ['postgis'],
+  });
+  ```
+  
+  This excludes PostGIS system tables:
+  - `geography_columns`
+  - `geometry_columns`
+  - `spatial_ref_sys`
+</ParamField>
+
+## Introspection Options
+
+### introspect
+
+<ParamField path="introspect" type="object">
+  Configure schema introspection behavior.
+  
+  ```typescript
+  export default defineConfig({
+    introspect: {
+      casing: 'preserve',
+    },
+  });
+  ```
+</ParamField>
+
+<ParamField path="introspect.casing" type="string" default="camel">
+  Column name casing in generated schema.
+  
+  **Type:** `'camel' | 'preserve'`
+  
+  - `camel`: Converts `user_name` to `userName`
+  - `preserve`: Keeps original database casing
+  
+  ```typescript
+  introspect: {
+    casing: 'preserve',
+  }
+  ```
+</ParamField>
+
+## Advanced Options
+
+### casing
+
+<ParamField path="casing" type="string">
+  Global column serialization casing.
+  
+  **Type:** `'camelCase' | 'snake_case'`
+  
+  ```typescript
+  export default defineConfig({
+    casing: 'snake_case',
+  });
+  ```
+</ParamField>
+
+### verbose
+
+<ParamField path="verbose" type="boolean" default={false}>
+  Print all SQL statements during push commands.
+  
+  ```typescript
+  export default defineConfig({
+    verbose: true,
+  });
+  ```
+</ParamField>
+
+### strict
+
+<ParamField path="strict" type="boolean" default={false}>
+  Always require confirmation for push commands.
+  
+  ```typescript
+  export default defineConfig({
+    strict: true,
+  });
+  ```
+</ParamField>
+
+### entities
+
+<ParamField path="entities" type="object">
+  Configure entity introspection (PostgreSQL only).
+  
+  ```typescript
+  export default defineConfig({
+    entities: {
+      roles: true,
+    },
+  });
+  ```
+</ParamField>
+
+<ParamField path="entities.roles" type="boolean | object" default={false}>
+  Introspect database roles.
+  
+  ```typescript
+  // Enable all roles
+  entities: {
+    roles: true,
+  }
+  
+  // Provider-specific roles
+  entities: {
+    roles: {
+      provider: 'supabase',
+    },
+  }
+  
+  // Include/exclude specific roles
+  entities: {
+    roles: {
+      include: ['authenticated', 'service_role'],
+      exclude: ['postgres'],
+    },
+  }
+  ```
+  
+  **Providers:** `'supabase'` | `'neon'` | custom string
+</ParamField>
+
+## Complete Examples
+
+### PostgreSQL Production
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema/**/*.ts',
+  out: './drizzle',
+  
+  dbCredentials: {
+    host: process.env.DB_HOST!,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER!,
+    password: process.env.DB_PASSWORD!,
+    database: process.env.DB_NAME!,
+    ssl: {
+      rejectUnauthorized: true,
+      ca: process.env.DB_CA_CERT,
+    },
+  },
+  
+  migrations: {
+    table: 'migrations',
+    schema: 'public',
+    prefix: 'timestamp',
+  },
+  
+  schemaFilter: ['public', 'auth'],
+  breakpoints: true,
+  verbose: false,
+  strict: true,
+});
+```
+
+### Multi-Project Setup
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/schema.ts',
+  out: './drizzle',
+  
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+  
+  // Only manage tables with project prefix
+  tablesFilter: ['app1_*'],
+  
+  migrations: {
+    table: 'app1_migrations',
+    prefix: 'timestamp',
+  },
+});
+```
+
+### Turso Edge
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'turso',
+  schema: './src/schema.ts',
+  out: './drizzle',
+  
+  dbCredentials: {
+    url: process.env.TURSO_DATABASE_URL!,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  },
+  
+  introspect: {
+    casing: 'preserve',
+  },
+});
+```
+
+### Cloudflare D1
+
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'sqlite',
+  driver: 'd1-http',
+  schema: './src/schema.ts',
+  out: './migrations',
+  
+  dbCredentials: {
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+    databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+    token: process.env.CLOUDFLARE_API_TOKEN!,
+  },
+});
+```
+
+## TypeScript Types
+
+```typescript
+import type { Config } from 'drizzle-kit';
+
+const config: Config = {
+  dialect: 'postgresql',
+  schema: './src/schema.ts',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+};
+
+export default config;
+```
+
+## Environment Variables
+
+Load environment variables using `dotenv`:
+
+```typescript
+import 'dotenv/config';
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+Or use a `.env` file:
+
+```bash
+DATABASE_URL=postgresql://user:pass@localhost:5432/db
+```

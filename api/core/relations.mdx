@@ -1,0 +1,482 @@
+---
+title: Relations API
+description: Complete API reference for defining and querying table relations in Drizzle ORM.
+---
+
+Drizzle's relations API enables you to define relationships between tables and query them using an intuitive, type-safe syntax. Relations are defined separately from table schemas and power the relational query API.
+
+## Import
+
+```typescript
+import { relations } from 'drizzle-orm';
+```
+
+## Defining Relations
+
+### relations()
+
+Define relationships between tables:
+
+<ParamField path="table" type="Table" required>
+  The table to define relations for
+</ParamField>
+
+<ParamField path="relations" type="function" required>
+  Function that receives helpers and returns relation definitions
+</ParamField>
+
+```typescript
+import { pgTable, serial, text, integer } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  authorId: integer('author_id').notNull(),
+});
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one, many }) => ({
+  author: one(users, {
+    fields: [posts.authorId],
+    references: [users.id],
+  }),
+}));
+```
+
+## Relation Helpers
+
+The `relations` function provides two helper functions:
+
+### one()
+
+Define a one-to-one or many-to-one relationship:
+
+<ParamField path="table" type="Table" required>
+  The related table
+</ParamField>
+
+<ParamField path="config" type="object">
+  Optional configuration for the relation
+</ParamField>
+
+<ParamField path="config.fields" type="Column[]">
+  Foreign key columns in the current table
+</ParamField>
+
+<ParamField path="config.references" type="Column[]">
+  Referenced columns in the related table
+</ParamField>
+
+<ParamField path="config.relationName" type="string">
+  Optional name to disambiguate multiple relations between the same tables
+</ParamField>
+
+```typescript
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.authorId],
+    references: [users.id],
+  }),
+}));
+```
+
+**Implicit relations** (inferred from the reverse side):
+
+```typescript
+export const profilesRelations = relations(profiles, ({ one }) => ({
+  // Drizzle infers fields/references from the users.profile relation
+  user: one(users),
+}));
+```
+
+### many()
+
+Define a one-to-many relationship:
+
+<ParamField path="table" type="Table" required>
+  The related table
+</ParamField>
+
+<ParamField path="config" type="object">
+  Optional configuration
+</ParamField>
+
+<ParamField path="config.relationName" type="string">
+  Optional name to disambiguate multiple relations
+</ParamField>
+
+```typescript
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+  comments: many(comments),
+}));
+```
+
+## Relation Types
+
+### One-to-One
+
+```typescript
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name'),
+});
+
+export const profiles = pgTable('profiles', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().unique(),
+  bio: text('bio'),
+});
+
+export const usersRelations = relations(users, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [profiles.userId],
+    references: [users.id],
+  }),
+}));
+
+export const profilesRelations = relations(profiles, ({ one }) => ({
+  user: one(users, {
+    fields: [profiles.userId],
+    references: [users.id],
+  }),
+}));
+```
+
+### One-to-Many
+
+```typescript
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.authorId],
+    references: [users.id],
+  }),
+}));
+```
+
+### Many-to-Many
+
+Implemented using a junction table:
+
+```typescript
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name'),
+});
+
+export const groups = pgTable('groups', {
+  id: serial('id').primaryKey(),
+  name: text('name'),
+});
+
+export const usersToGroups = pgTable('users_to_groups', {
+  userId: integer('user_id').notNull(),
+  groupId: integer('group_id').notNull(),
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+  usersToGroups: many(usersToGroups),
+}));
+
+export const groupsRelations = relations(groups, ({ many }) => ({
+  usersToGroups: many(usersToGroups),
+}));
+
+export const usersToGroupsRelations = relations(usersToGroups, ({ one }) => ({
+  user: one(users, {
+    fields: [usersToGroups.userId],
+    references: [users.id],
+  }),
+  group: one(groups, {
+    fields: [usersToGroups.groupId],
+    references: [groups.id],
+  }),
+}));
+```
+
+## Querying Relations
+
+### Basic Relational Query
+
+```typescript
+const result = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+// Returns users with their posts
+```
+
+### Nested Relations
+
+```typescript
+const result = await db.query.users.findMany({
+  with: {
+    posts: {
+      with: {
+        comments: true,
+      },
+    },
+  },
+});
+```
+
+### Filtering Related Data
+
+```typescript
+import { eq, gt } from 'drizzle-orm';
+
+const result = await db.query.users.findMany({
+  with: {
+    posts: {
+      where: (posts, { eq }) => eq(posts.published, true),
+      orderBy: (posts, { desc }) => desc(posts.createdAt),
+      limit: 10,
+    },
+  },
+});
+```
+
+### Selecting Specific Columns
+
+```typescript
+const result = await db.query.users.findMany({
+  columns: {
+    id: true,
+    name: true,
+  },
+  with: {
+    posts: {
+      columns: {
+        id: true,
+        title: true,
+      },
+    },
+  },
+});
+```
+
+### Using extras
+
+Add computed fields to the result:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const result = await db.query.users.findMany({
+  extras: {
+    lowerCaseName: sql<string>`lower(${users.name})`.as('lower_case_name'),
+  },
+});
+```
+
+## Query Configuration
+
+### DBQueryConfig Type
+
+The configuration object for relational queries:
+
+<ResponseField name="columns" type="object">
+  Select specific columns from the table
+
+  ```typescript
+  columns: {
+    id: true,
+    name: true,
+    email: false, // Explicitly exclude
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="with" type="object">
+  Include related data
+
+  ```typescript
+  with: {
+    posts: true,
+    profile: {
+      columns: { bio: true },
+    },
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="where" type="SQL | function">
+  Filter conditions for the query
+
+  ```typescript
+  where: (users, { eq }) => eq(users.active, true)
+  ```
+</ResponseField>
+
+<ResponseField name="orderBy" type="Column | SQL | function | array">
+  Order the results
+
+  ```typescript
+  orderBy: (users, { desc }) => desc(users.createdAt)
+  ```
+</ResponseField>
+
+<ResponseField name="limit" type="number | Placeholder">
+  Limit the number of results
+
+  ```typescript
+  limit: 10
+  ```
+</ResponseField>
+
+<ResponseField name="offset" type="number | Placeholder">
+  Offset for pagination (only available on root queries)
+
+  ```typescript
+  offset: 20
+  ```
+</ResponseField>
+
+<ResponseField name="extras" type="object | function">
+  Additional computed fields
+
+  ```typescript
+  extras: (fields, { sql }) => ({
+    fullName: sql<string>`concat(${fields.firstName}, ' ', ${fields.lastName})`.as('full_name'),
+  })
+  ```
+</ResponseField>
+
+## Relational Query Methods
+
+### findMany()
+
+Find multiple records with relations:
+
+```typescript
+const users = await db.query.users.findMany({
+  where: (users, { gt }) => gt(users.age, 18),
+  with: { posts: true },
+});
+```
+
+### findFirst()
+
+Find the first matching record:
+
+```typescript
+const user = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.email, 'user@example.com'),
+  with: { profile: true },
+});
+```
+
+## Disambiguating Relations
+
+When you have multiple relations between the same tables, use `relationName`:
+
+```typescript
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  authorId: integer('author_id'),
+  reviewerId: integer('reviewer_id'),
+});
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.authorId],
+    references: [users.id],
+    relationName: 'author',
+  }),
+  reviewer: one(users, {
+    fields: [posts.reviewerId],
+    references: [users.id],
+    relationName: 'reviewer',
+  }),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+  authoredPosts: many(posts, { relationName: 'author' }),
+  reviewedPosts: many(posts, { relationName: 'reviewer' }),
+}));
+```
+
+## Operators in Relational Queries
+
+The following operators are available in `where` and `orderBy` functions:
+
+### Comparison Operators
+
+```typescript
+import { eq, ne, gt, gte, lt, lte } from 'drizzle-orm';
+
+db.query.users.findMany({
+  where: (users, { eq, gt }) => eq(users.active, true),
+});
+```
+
+### Logical Operators
+
+```typescript
+import { and, or, not } from 'drizzle-orm';
+
+db.query.users.findMany({
+  where: (users, { and, eq, gt }) => and(
+    eq(users.active, true),
+    gt(users.age, 18)
+  ),
+});
+```
+
+### Pattern Matching
+
+```typescript
+import { like, ilike } from 'drizzle-orm';
+
+db.query.users.findMany({
+  where: (users, { like }) => like(users.name, '%John%'),
+});
+```
+
+### Array Operators
+
+```typescript
+import { inArray, notInArray } from 'drizzle-orm';
+
+db.query.users.findMany({
+  where: (users, { inArray }) => inArray(users.id, [1, 2, 3]),
+});
+```
+
+### Order By Operators
+
+```typescript
+import { asc, desc } from 'drizzle-orm';
+
+db.query.users.findMany({
+  orderBy: (users, { desc }) => desc(users.createdAt),
+});
+```
+
+## Best Practices
+
+1. **Define both sides**: Always define relations on both tables for full type safety
+2. **Use relationName**: Disambiguate multiple relations between the same tables
+3. **Select wisely**: Only select columns you need to improve performance
+4. **Limit nested queries**: Deep nesting can impact performance
+5. **Use where clauses**: Filter related data to reduce payload size
+
+## Related APIs
+
+- [Query Builder](/queries/select) - Alternative query syntax
+- [Schema Definition](/schema/tables) - Define table schemas
+- [SQL](/api/core/sql) - Use raw SQL in queries

@@ -1,0 +1,367 @@
+---
+title: "PostgreSQL Table Definition"
+description: "API reference for defining PostgreSQL tables and schemas"
+---
+
+## pgTable()
+
+Defines a PostgreSQL table with columns and constraints.
+
+```typescript
+import { pgTable, serial, varchar, integer } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  age: integer('age'),
+});
+```
+
+### Function Signatures
+
+```typescript
+// Basic table definition
+function pgTable<TTableName extends string>(
+  name: TTableName,
+  columns: Record<string, PgColumnBuilderBase>
+): PgTableWithColumns;
+
+// With column builder function
+function pgTable<TTableName extends string>(
+  name: TTableName,
+  columns: (columnTypes) => Record<string, PgColumnBuilderBase>
+): PgTableWithColumns;
+
+// With constraints (array syntax - recommended)
+function pgTable<TTableName extends string>(
+  name: TTableName,
+  columns: Record<string, PgColumnBuilderBase>,
+  extraConfig: (table) => PgTableExtraConfigValue[]
+): PgTableWithColumns;
+```
+
+### Parameters
+
+<ParamField path="name" type="string" required>
+  Table name in the database
+</ParamField>
+
+<ParamField path="columns" type="object | function" required>
+  Column definitions as an object, or a function receiving column type builders
+</ParamField>
+
+<ParamField path="extraConfig" type="function" optional>
+  Function returning array of indexes, constraints, and checks
+</ParamField>
+
+### Basic Usage
+
+```typescript
+import { pgTable, serial, varchar, text, timestamp } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+```
+
+### Using Column Builder Function
+
+Pass a function to receive all column type builders without individual imports:
+
+```typescript
+export const products = pgTable('products', (t) => ({
+  id: t.serial('id').primaryKey(),
+  name: t.varchar('name', { length: 255 }).notNull(),
+  price: t.numeric('price', { precision: 10, scale: 2 }),
+  stock: t.integer('stock').default(0),
+}));
+```
+
+### Adding Indexes and Constraints
+
+Use the third parameter to define indexes, foreign keys, and other constraints:
+
+```typescript
+import { pgTable, serial, varchar, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  organizationId: integer('organization_id').notNull(),
+}, (table) => [
+  // Index
+  index('email_idx').on(table.email),
+  
+  // Unique index
+  uniqueIndex('email_unique_idx').on(table.email),
+  
+  // Composite unique constraint
+  uniqueIndex('org_email_idx').on(table.organizationId, table.email),
+]);
+```
+
+### Foreign Keys
+
+```typescript
+import { pgTable, serial, integer, foreignKey } from 'drizzle-orm/pg-core';
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.userId],
+    foreignColumns: [users.id],
+  }).onDelete('cascade'),
+]);
+
+// Or inline
+export const comments = pgTable('comments', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id')
+    .notNull()
+    .references(() => posts.id, { onDelete: 'cascade' }),
+});
+```
+
+### Composite Primary Keys
+
+```typescript
+import { pgTable, varchar, integer, primaryKey } from 'drizzle-orm/pg-core';
+
+export const userRoles = pgTable('user_roles', {
+  userId: integer('user_id').notNull(),
+  roleId: integer('role_id').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.roleId] }),
+]);
+```
+
+### Check Constraints
+
+```typescript
+import { pgTable, integer, check, sql } from 'drizzle-orm/pg-core';
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  price: integer('price').notNull(),
+  discount: integer('discount').notNull(),
+}, (table) => [
+  check('price_check', sql`${table.price} > 0`),
+  check('discount_check', sql`${table.discount} >= 0 AND ${table.discount} <= 100`),
+]);
+```
+
+## pgSchema()
+
+Defines a PostgreSQL schema (namespace) for organizing tables.
+
+```typescript
+import { pgSchema } from 'drizzle-orm/pg-core';
+
+export const authSchema = pgSchema('auth');
+
+export const users = authSchema.table('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+});
+
+// Creates table in the 'auth' schema: auth.users
+```
+
+<ParamField path="name" type="string" required>
+  Schema name (cannot be 'public' - use `pgTable` directly for public schema)
+</ParamField>
+
+### Schema Methods
+
+#### table()
+
+Defines a table within the schema. Same API as `pgTable()`.
+
+```typescript
+const mySchema = pgSchema('my_schema');
+
+const users = mySchema.table('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }),
+});
+```
+
+#### view()
+
+Defines a view within the schema.
+
+```typescript
+const myView = mySchema.view('my_view').as((qb) =>
+  qb.select().from(users)
+);
+```
+
+#### materializedView()
+
+Defines a materialized view within the schema.
+
+```typescript
+const myMaterializedView = mySchema.materializedView('my_mat_view').as((qb) =>
+  qb.select().from(users)
+);
+```
+
+#### enum()
+
+Defines an enum within the schema.
+
+```typescript
+const statusEnum = mySchema.enum('status', ['active', 'inactive', 'pending']);
+```
+
+#### sequence()
+
+Defines a sequence within the schema.
+
+```typescript
+const mySequence = mySchema.sequence('my_sequence');
+```
+
+## pgTableCreator()
+
+Creates a custom table creator with a name transformation function. Useful for adding prefixes or transforming table names.
+
+```typescript
+import { pgTableCreator } from 'drizzle-orm/pg-core';
+
+// Add prefix to all tables
+const pgTable = pgTableCreator((name) => `myapp_${name}`);
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+});
+// Creates table named: myapp_users
+```
+
+<ParamField path="customizeTableName" type="(name: string) => string" required>
+  Function that transforms table names
+</ParamField>
+
+### Use Cases
+
+```typescript
+// Add environment prefix
+const pgTable = pgTableCreator(
+  (name) => `${process.env.TABLE_PREFIX}_${name}`
+);
+
+// Use snake_case
+const pgTable = pgTableCreator(
+  (name) => name.replace(/([A-Z])/g, '_$1').toLowerCase()
+);
+
+const userProfiles = pgTable('userProfiles', { /*...*/ });
+// Creates: user_profiles
+```
+
+## enableRLS()
+
+Enables Row Level Security (RLS) on a table.
+
+```typescript
+import { pgTable, serial, varchar } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }),
+}).enableRLS();
+```
+
+This generates SQL:
+```sql
+CREATE TABLE users (...);
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+```
+
+## PgTable Class
+
+The table object returned by `pgTable()` contains:
+
+### Properties
+
+- Column references for building queries
+- Table metadata (name, schema)
+- Type information for TypeScript inference
+
+### Type Inference
+
+```typescript
+import { InferInsertModel, InferSelectModel } from 'drizzle-orm';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  email: varchar('email', { length: 255 }),
+});
+
+// Infer types from table
+type User = InferSelectModel<typeof users>;
+// { id: number; name: string; email: string | null }
+
+type NewUser = InferInsertModel<typeof users>;
+// { id?: number; name: string; email?: string | null }
+```
+
+### Accessing Table Information
+
+```typescript
+import { getTableName, getTableColumns } from 'drizzle-orm';
+
+const tableName = getTableName(users); // 'users'
+const columns = getTableColumns(users); // Column objects
+```
+
+## Best Practices
+
+### Use Schemas for Organization
+
+```typescript
+const authSchema = pgSchema('auth');
+const publicSchema = pgSchema('public'); // Error! Use pgTable directly
+
+const users = authSchema.table('users', { /*...*/ });
+const sessions = authSchema.table('sessions', { /*...*/ });
+```
+
+### Define Constraints Explicitly
+
+```typescript
+// Good: Explicit constraint names
+export const users = pgTable('users', {
+  id: serial('id'),
+  email: varchar('email', { length: 255 }),
+}, (table) => [
+  primaryKey({ name: 'users_pkey', columns: [table.id] }),
+  uniqueIndex('users_email_idx').on(table.email),
+]);
+
+// Also good: Inline with auto-generated names
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: varchar('title', { length: 255 }).notNull().unique(),
+});
+```
+
+### Keep Related Tables Together
+
+```typescript
+// schema.ts
+export const users = pgTable('users', { /*...*/ });
+export const posts = pgTable('posts', { /*...*/ });
+export const comments = pgTable('comments', { /*...*/ });
+
+export const relations = {
+  users: /* relations */,
+  posts: /* relations */,
+};
+```

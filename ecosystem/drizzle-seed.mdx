@@ -1,0 +1,550 @@
+---
+title: "Drizzle Seed"
+description: "Generate deterministic, realistic test data for your database with type-safe generators"
+---
+
+Drizzle Seed is a TypeScript library for generating realistic, deterministic fake data to populate your database. Using a seedable pseudorandom number generator (pRNG), it produces consistent, reproducible data across runs - perfect for testing, development, and debugging.
+
+<Note>
+Requires `drizzle-orm@0.36.4` or higher for full compatibility with identity columns and type safety.
+</Note>
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install drizzle-seed
+```
+
+```bash pnpm
+pnpm add drizzle-seed
+```
+
+```bash yarn
+yarn add drizzle-seed
+```
+
+```bash bun
+bun add drizzle-seed
+```
+</CodeGroup>
+
+You must have `drizzle-orm` installed:
+
+```bash
+npm install drizzle-orm
+```
+
+## Quick Start
+
+Generate 10 users with random data:
+
+```typescript
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { seed } from 'drizzle-seed';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+});
+
+const db = drizzle(process.env.DATABASE_URL!);
+
+// Seed with default count of 10
+await seed(db, { users });
+```
+
+## How It Works
+
+### Deterministic Data Generation
+
+Drizzle Seed uses a pseudorandom number generator (pRNG) initialized with a seed value. The same seed always produces the same sequence of data:
+
+```typescript
+// Same seed = same data every time
+await seed(db, schema, { seed: 12345 });
+```
+
+**Benefits:**
+- **Consistency** - Tests run on identical data every time
+- **Debugging** - Reproduce bugs with the same data set
+- **Collaboration** - Team members share seed values for consistent data
+
+### Automatic Type Inference
+
+Drizzle Seed analyzes your schema and generates appropriate data for each column type:
+
+```typescript
+import { pgTable, serial, varchar, integer, timestamp, boolean } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),           // Sequential: 1, 2, 3...
+  name: varchar('name', { length: 255 }),  // Random names: "John Doe"
+  age: integer('age'),                     // Random integers
+  createdAt: timestamp('created_at'),      // Random timestamps
+  active: boolean('active'),               // Random booleans
+});
+
+await seed(db, { users });
+```
+
+## Basic Usage
+
+### Specify Count
+
+Generate a specific number of records:
+
+```typescript
+// Generate 1000 users
+await seed(db, { users }, { count: 1000 });
+```
+
+### Set Seed Value
+
+Use different seeds for different data sets:
+
+```typescript
+// Development seed
+await seed(db, schema, { seed: 1 });
+
+// Testing seed
+await seed(db, schema, { seed: 999 });
+
+// Staging seed
+await seed(db, schema, { seed: 12345 });
+```
+
+## Advanced Usage with Refinements
+
+Customize data generation with the `refine` method:
+
+```typescript
+import { pgTable, serial, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { seed } from 'drizzle-seed';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull(),
+  age: integer('age'),
+  role: text('role'),
+  createdAt: timestamp('created_at'),
+});
+
+await seed(db, { users }).refine((funcs) => ({
+  users: {
+    columns: {
+      email: funcs.email(),
+      age: funcs.int({ minValue: 18, maxValue: 80 }),
+      role: funcs.valuesFromArray({
+        values: ['admin', 'user', 'moderator'],
+      }),
+    },
+  },
+}));
+```
+
+## Generator Functions
+
+Drizzle Seed provides extensive generator functions:
+
+### String Generators
+
+<CodeGroup>
+```typescript Names
+funcs.firstName()        // "John"
+funcs.lastName()         // "Doe"
+funcs.fullName()         // "John Doe"
+funcs.email()            // "john.doe@example.com"
+```
+
+```typescript Addresses
+funcs.city()             // "New York"
+funcs.country()          // "United States"
+funcs.streetAddress()    // "123 Main St"
+funcs.state()            // "California"
+funcs.postcode()         // "12345"
+```
+
+```typescript Business
+funcs.companyName()      // "Acme Corp"
+funcs.jobTitle()         // "Software Engineer"
+```
+
+```typescript Lorem
+funcs.loremIpsum()       // "Lorem ipsum dolor sit amet..."
+```
+</CodeGroup>
+
+### Number Generators
+
+```typescript
+// Integers
+funcs.int({ minValue: 1, maxValue: 100 })
+
+// Decimals
+funcs.number({
+  minValue: 0.0,
+  maxValue: 1.0,
+  precision: 100  // Two decimal places
+})
+
+// Sequential integers (for PKs)
+funcs.intPrimaryKey()  // 1, 2, 3, 4...
+```
+
+### Date and Time Generators
+
+```typescript
+// Timestamps
+funcs.timestamp()
+
+// Dates
+funcs.date()
+
+// Times
+funcs.time()
+
+// Datetime
+funcs.datetime()
+
+// Years
+funcs.year()
+```
+
+### Special Generators
+
+```typescript
+// UUIDs
+funcs.uuid()
+
+// Booleans
+funcs.boolean()
+
+// Enums
+funcs.enum({ enum: myEnum })
+
+// JSON
+funcs.json()
+
+// Phone numbers
+funcs.phoneNumber()
+```
+
+### Custom Values
+
+```typescript
+// Static value
+funcs.default({ defaultValue: "constant" })
+
+// Values from array
+funcs.valuesFromArray({
+  values: ['option1', 'option2', 'option3'],
+})
+
+// Unique values from array
+funcs.valuesFromArray({
+  values: ['unique1', 'unique2', 'unique3'],
+  isUnique: true,
+})
+
+// Weighted values
+funcs.valuesFromArray({
+  values: [
+    { weight: 0.7, values: ['common'] },
+    { weight: 0.3, values: ['rare'] },
+  ],
+})
+```
+
+### Unique Generators
+
+Generate unique values:
+
+```typescript
+funcs.uniqueEmail()
+funcs.uniqueInt({ minValue: 1, maxValue: 10000 })
+funcs.uniqueString({ isUnique: true })
+funcs.uniqueFirstName()
+funcs.uniqueLastName()
+```
+
+## Seeding Related Data
+
+Generate data for tables with relationships:
+
+```typescript
+import { pgTable, serial, text, integer } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  userId: integer('user_id').notNull().references(() => users.id),
+});
+
+const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+const postsRelations = relations(posts, ({ one }) => ({
+  user: one(users, {
+    fields: [posts.userId],
+    references: [users.id],
+  }),
+}));
+
+// Seed with relationships
+await seed(db, { users, posts }).refine((funcs) => ({
+  users: {
+    count: 10,
+    with: {
+      posts: 5  // Each user gets 5 posts
+    },
+  },
+}));
+```
+
+### Weighted Relationships
+
+Create varied relationship counts:
+
+```typescript
+await seed(db, { users, posts }).refine((funcs) => ({
+  users: {
+    count: 100,
+    with: {
+      posts: [
+        { weight: 0.2, count: 0 },        // 20% have no posts
+        { weight: 0.5, count: [1, 3] },   // 50% have 1-3 posts
+        { weight: 0.3, count: [4, 10] },  // 30% have 4-10 posts
+      ],
+    },
+  },
+}));
+```
+
+## Reset Database
+
+Clear and reseed your database:
+
+```typescript
+import { reset } from 'drizzle-seed';
+import * as schema from './schema';
+
+const db = drizzle(process.env.DATABASE_URL!);
+
+// Delete all data and reseed
+await reset(db, schema);
+```
+
+<Warning>
+This deletes all data in the specified tables. Use with caution!
+</Warning>
+
+## Common Patterns
+
+### E-commerce Example
+
+```typescript
+import { pgTable, serial, text, integer, numeric, timestamp } from 'drizzle-orm/pg-core';
+
+const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  price: numeric('price', { precision: 10, scale: 2 }),
+  stock: integer('stock'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+const orders = pgTable('orders', {
+  id: serial('id').primaryKey(),
+  productId: integer('product_id').references(() => products.id),
+  quantity: integer('quantity'),
+  total: numeric('total', { precision: 10, scale: 2 }),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+await seed(db, { products, orders }, { count: 100 }).refine((funcs) => ({
+  products: {
+    columns: {
+      name: funcs.loremIpsum({ sentenceCount: 2 }),
+      price: funcs.number({ minValue: 9.99, maxValue: 999.99, precision: 100 }),
+      stock: funcs.int({ minValue: 0, maxValue: 1000 }),
+    },
+    with: {
+      orders: [1, 5],  // Each product has 1-5 orders
+    },
+  },
+  orders: {
+    columns: {
+      quantity: funcs.int({ minValue: 1, maxValue: 10 }),
+    },
+  },
+}));
+```
+
+### Blog Platform Example
+
+```typescript
+import { pgTable, serial, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  bio: text('bio'),
+});
+
+const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  published: boolean('published').default(false),
+  authorId: integer('author_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+const comments = pgTable('comments', {
+  id: serial('id').primaryKey(),
+  content: text('content').notNull(),
+  postId: integer('post_id').references(() => posts.id),
+  userId: integer('user_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+await seed(db, { users, posts, comments }, { seed: 1 }).refine((funcs) => ({
+  users: {
+    count: 50,
+    columns: {
+      email: funcs.email(),
+      name: funcs.fullName(),
+      bio: funcs.loremIpsum({ sentenceCount: 3 }),
+    },
+    with: {
+      posts: [0, 10],  // Users have 0-10 posts
+    },
+  },
+  posts: {
+    columns: {
+      title: funcs.loremIpsum({ sentenceCount: 1 }),
+      content: funcs.loremIpsum({ sentenceCount: 20 }),
+      published: funcs.boolean(),
+    },
+    with: {
+      comments: [0, 25],  // Posts have 0-25 comments
+    },
+  },
+  comments: {
+    columns: {
+      content: funcs.loremIpsum({ sentenceCount: 2 }),
+    },
+  },
+}));
+```
+
+## Testing Patterns
+
+### Test Setup
+
+```typescript
+import { beforeEach, test } from 'vitest';
+import { seed, reset } from 'drizzle-seed';
+import * as schema from './schema';
+
+beforeEach(async () => {
+  // Reset database before each test
+  await reset(db, schema);
+  
+  // Seed with consistent data
+  await seed(db, schema, { seed: 1, count: 10 });
+});
+
+test('user creation', async () => {
+  // Your test with seeded data
+  const users = await db.select().from(schema.users);
+  expect(users).toHaveLength(10);
+});
+```
+
+### Multiple Scenarios
+
+```typescript
+const scenarios = {
+  empty: { seed: 1, count: 0 },
+  small: { seed: 2, count: 10 },
+  medium: { seed: 3, count: 100 },
+  large: { seed: 4, count: 1000 },
+};
+
+test('handles empty database', async () => {
+  await reset(db, schema);
+  await seed(db, schema, scenarios.empty);
+  // Test with empty database
+});
+
+test('handles large dataset', async () => {
+  await reset(db, schema);
+  await seed(db, schema, scenarios.large);
+  // Test with 1000 records
+});
+```
+
+## Performance Tips
+
+<Steps>
+  <Step title="Use appropriate counts">
+    Start with small counts during development:
+    ```typescript
+    await seed(db, schema, { count: 10 });
+    ```
+  </Step>
+
+  <Step title="Batch operations">
+    Drizzle Seed automatically batches inserts for better performance.
+  </Step>
+
+  <Step title="Disable constraints for large seeds">
+    For very large datasets, consider temporarily disabling foreign key constraints:
+    ```sql
+    -- PostgreSQL
+    SET session_replication_role = 'replica';
+    -- Run seed
+    SET session_replication_role = 'origin';
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Consistent Seeds" icon="repeat">
+    Use the same seed value for tests to ensure reproducible results
+  </Card>
+  <Card title="Realistic Data" icon="check">
+    Use appropriate generators to create data that resembles production
+  </Card>
+  <Card title="Relationship Balance" icon="diagram-project">
+    Use weighted relationships to simulate realistic data distribution
+  </Card>
+  <Card title="Clean State" icon="broom">
+    Reset database between test runs for isolation
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Validation" icon="shield" href="/ecosystem/schema-validation">
+    Validate seeded data with Zod, Valibot, or TypeBox
+  </Card>
+  <Card title="Testing Guide" icon="flask" href="/guides/testing">
+    Learn testing patterns with Drizzle ORM
+  </Card>
+</CardGroup>

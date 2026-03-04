@@ -1,0 +1,696 @@
+---
+title: "PostgreSQL Column Types"
+description: "Complete reference for all PostgreSQL column types in Drizzle ORM"
+---
+
+## Numeric Types
+
+### integer()
+
+PostgreSQL `INTEGER` type for whole numbers.
+
+```typescript
+import { pgTable, integer } from 'drizzle-orm/pg-core';
+
+const products = pgTable('products', {
+  stock: integer('stock').notNull().default(0),
+  views: integer('views'),
+});
+```
+
+**TypeScript type:** `number`
+
+**SQL type:** `INTEGER`
+
+### serial()
+
+Auto-incrementing integer column.
+
+```typescript
+import { pgTable, serial } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+});
+```
+
+**TypeScript type:** `number`
+
+**SQL type:** `SERIAL` (equivalent to `INTEGER` with `DEFAULT nextval('sequence')`)
+
+**Note:** Automatically has `.notNull()` and `.default()` applied.
+
+### bigint()
+
+PostgreSQL `BIGINT` type for large integers.
+
+```typescript
+import { pgTable, bigint } from 'drizzle-orm/pg-core';
+
+const analytics = pgTable('analytics', {
+  // Mode: 'number' (default, values up to 2^53)
+  views: bigint('views', { mode: 'number' }),
+  
+  // Mode: 'bigint' (for values beyond 2^53)
+  veryLargeNumber: bigint('very_large', { mode: 'bigint' }),
+});
+```
+
+<ParamField path="config.mode" type="'number' | 'bigint'" required>
+  - `'number'`: Use JavaScript `number` (safe up to 2^53)
+  - `'bigint'`: Use JavaScript `bigint` for larger values
+</ParamField>
+
+**TypeScript type:** `number` or `bigint` (based on mode)
+
+**SQL type:** `BIGINT`
+
+### bigserial()
+
+Auto-incrementing bigint column.
+
+```typescript
+import { pgTable, bigserial } from 'drizzle-orm/pg-core';
+
+const logs = pgTable('logs', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  // or
+  id2: bigserial('id2', { mode: 'bigint' }).primaryKey(),
+});
+```
+
+<ParamField path="config.mode" type="'number' | 'bigint'" required>
+  Determines whether to use JavaScript `number` or `bigint`
+</ParamField>
+
+**SQL type:** `BIGSERIAL`
+
+### smallint()
+
+PostgreSQL `SMALLINT` type for small integers (-32,768 to 32,767).
+
+```typescript
+import { pgTable, smallint } from 'drizzle-orm/pg-core';
+
+const settings = pgTable('settings', {
+  priority: smallint('priority'),
+});
+```
+
+**TypeScript type:** `number`
+
+**SQL type:** `SMALLINT`
+
+### smallserial()
+
+Auto-incrementing smallint column.
+
+```typescript
+import { pgTable, smallserial } from 'drizzle-orm/pg-core';
+
+const items = pgTable('items', {
+  id: smallserial('id').primaryKey(),
+});
+```
+
+**SQL type:** `SMALLSERIAL`
+
+### numeric()
+
+PostgreSQL `NUMERIC`/`DECIMAL` type for exact decimal values.
+
+```typescript
+import { pgTable, numeric } from 'drizzle-orm/pg-core';
+
+const products = pgTable('products', {
+  // Default: string mode
+  price: numeric('price', { precision: 10, scale: 2 }),
+  
+  // Number mode
+  weight: numeric('weight', { precision: 8, scale: 3, mode: 'number' }),
+  
+  // Bigint mode for very large precise numbers
+  largeValue: numeric('large', { precision: 30, scale: 10, mode: 'bigint' }),
+});
+```
+
+<ParamField path="config.precision" type="number" optional>
+  Total number of digits
+</ParamField>
+
+<ParamField path="config.scale" type="number" optional>
+  Number of digits after decimal point
+</ParamField>
+
+<ParamField path="config.mode" type="'string' | 'number' | 'bigint'" optional>
+  - `'string'` (default): Returns string for exact precision
+  - `'number'`: Converts to JavaScript number
+  - `'bigint'`: Converts to JavaScript bigint
+</ParamField>
+
+**TypeScript type:** `string`, `number`, or `bigint` (based on mode)
+
+**SQL type:** `NUMERIC(precision, scale)`
+
+**Alias:** `decimal()` - same as `numeric()`
+
+### real()
+
+PostgreSQL `REAL` type for floating-point numbers (single precision).
+
+```typescript
+import { pgTable, real } from 'drizzle-orm/pg-core';
+
+const measurements = pgTable('measurements', {
+  temperature: real('temperature'),
+});
+```
+
+**TypeScript type:** `number`
+
+**SQL type:** `REAL`
+
+### doublePrecision()
+
+PostgreSQL `DOUBLE PRECISION` type for floating-point numbers.
+
+```typescript
+import { pgTable, doublePrecision } from 'drizzle-orm/pg-core';
+
+const coordinates = pgTable('coordinates', {
+  latitude: doublePrecision('latitude'),
+  longitude: doublePrecision('longitude'),
+});
+```
+
+**TypeScript type:** `number`
+
+**SQL type:** `DOUBLE PRECISION`
+
+## String Types
+
+### varchar()
+
+PostgreSQL `VARCHAR` type for variable-length strings.
+
+```typescript
+import { pgTable, varchar } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  // With length limit
+  name: varchar('name', { length: 255 }),
+  
+  // With enum values
+  status: varchar('status', { 
+    length: 20,
+    enum: ['active', 'inactive', 'pending'] as const 
+  }),
+});
+```
+
+<ParamField path="config.length" type="number" optional>
+  Maximum string length. If omitted, creates `VARCHAR` without length limit.
+</ParamField>
+
+<ParamField path="config.enum" type="readonly string[]" optional>
+  TypeScript enum values for type safety
+</ParamField>
+
+**TypeScript type:** `string`
+
+**SQL type:** `VARCHAR` or `VARCHAR(length)`
+
+### char()
+
+PostgreSQL `CHAR` type for fixed-length strings.
+
+```typescript
+import { pgTable, char } from 'drizzle-orm/pg-core';
+
+const codes = pgTable('codes', {
+  countryCode: char('country_code', { length: 2 }),
+});
+```
+
+<ParamField path="config.length" type="number" optional>
+  Fixed string length
+</ParamField>
+
+**TypeScript type:** `string`
+
+**SQL type:** `CHAR(length)`
+
+### text()
+
+PostgreSQL `TEXT` type for unlimited-length strings.
+
+```typescript
+import { pgTable, text } from 'drizzle-orm/pg-core';
+
+const posts = pgTable('posts', {
+  content: text('content'),
+  
+  // With enum values
+  category: text('category', { 
+    enum: ['tech', 'lifestyle', 'business'] as const 
+  }),
+});
+```
+
+<ParamField path="config.enum" type="readonly string[]" optional>
+  TypeScript enum values for type safety
+</ParamField>
+
+**TypeScript type:** `string`
+
+**SQL type:** `TEXT`
+
+## Date and Time Types
+
+### timestamp()
+
+PostgreSQL `TIMESTAMP` type for date and time.
+
+```typescript
+import { pgTable, timestamp } from 'drizzle-orm/pg-core';
+
+const posts = pgTable('posts', {
+  // Default: Date object, no timezone
+  createdAt: timestamp('created_at').defaultNow(),
+  
+  // With timezone
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  
+  // String mode
+  publishedAt: timestamp('published_at', { mode: 'string' }),
+  
+  // With precision
+  preciseTiming: timestamp('precise', { precision: 6 }),
+});
+```
+
+<ParamField path="config.mode" type="'date' | 'string'" optional>
+  - `'date'` (default): Use JavaScript `Date` objects
+  - `'string'`: Keep as ISO 8601 string
+</ParamField>
+
+<ParamField path="config.withTimezone" type="boolean" optional>
+  If `true`, creates `TIMESTAMP WITH TIME ZONE`. Default: `false`
+</ParamField>
+
+<ParamField path="config.precision" type="0 | 1 | 2 | 3 | 4 | 5 | 6" optional>
+  Fractional seconds precision (0-6 digits)
+</ParamField>
+
+**TypeScript type:** `Date` or `string` (based on mode)
+
+**SQL type:** `TIMESTAMP` or `TIMESTAMP WITH TIME ZONE`
+
+### date()
+
+PostgreSQL `DATE` type for dates without time.
+
+```typescript
+import { pgTable, date } from 'drizzle-orm/pg-core';
+
+const events = pgTable('events', {
+  // String mode (default): 'YYYY-MM-DD'
+  eventDate: date('event_date'),
+  
+  // Date mode: JavaScript Date object
+  birthDate: date('birth_date', { mode: 'date' }),
+});
+```
+
+<ParamField path="config.mode" type="'date' | 'string'" optional>
+  - `'string'` (default): ISO date string format
+  - `'date'`: JavaScript Date object
+</ParamField>
+
+**TypeScript type:** `string` or `Date` (based on mode)
+
+**SQL type:** `DATE`
+
+### time()
+
+PostgreSQL `TIME` type for time without date.
+
+```typescript
+import { pgTable, time } from 'drizzle-orm/pg-core';
+
+const schedules = pgTable('schedules', {
+  startTime: time('start_time'),
+  endTime: time('end_time', { withTimezone: true, precision: 3 }),
+});
+```
+
+<ParamField path="config.withTimezone" type="boolean" optional>
+  If `true`, creates `TIME WITH TIME ZONE`
+</ParamField>
+
+<ParamField path="config.precision" type="0 | 1 | 2 | 3 | 4 | 5 | 6" optional>
+  Fractional seconds precision
+</ParamField>
+
+**TypeScript type:** `string`
+
+**SQL type:** `TIME` or `TIME WITH TIME ZONE`
+
+### interval()
+
+PostgreSQL `INTERVAL` type for time intervals.
+
+```typescript
+import { pgTable, interval } from 'drizzle-orm/pg-core';
+
+const tasks = pgTable('tasks', {
+  duration: interval('duration'),
+  timeout: interval('timeout', { fields: 'hour to second' }),
+});
+```
+
+<ParamField path="config.fields" type="string" optional>
+  Interval fields specification (e.g., 'day', 'hour to second')
+</ParamField>
+
+<ParamField path="config.precision" type="0 | 1 | 2 | 3 | 4 | 5 | 6" optional>
+  Fractional seconds precision
+</ParamField>
+
+**TypeScript type:** `string`
+
+**SQL type:** `INTERVAL`
+
+## Boolean Type
+
+### boolean()
+
+PostgreSQL `BOOLEAN` type.
+
+```typescript
+import { pgTable, boolean } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  isActive: boolean('is_active').default(true),
+  emailVerified: boolean('email_verified').notNull().default(false),
+});
+```
+
+**TypeScript type:** `boolean`
+
+**SQL type:** `BOOLEAN`
+
+## JSON Types
+
+### json()
+
+PostgreSQL `JSON` type for JSON data.
+
+```typescript
+import { pgTable, json } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  metadata: json('metadata'),
+  settings: json<{ theme: string; locale: string }>('settings'),
+});
+
+// Usage
+await db.insert(users).values({
+  metadata: { key: 'value' },
+  settings: { theme: 'dark', locale: 'en' },
+});
+```
+
+**TypeScript type:** `unknown` (use generic type parameter for type safety)
+
+**SQL type:** `JSON`
+
+### jsonb()
+
+PostgreSQL `JSONB` type for binary JSON (more efficient, supports indexing).
+
+```typescript
+import { pgTable, jsonb } from 'drizzle-orm/pg-core';
+
+type Metadata = {
+  tags: string[];
+  views: number;
+};
+
+const posts = pgTable('posts', {
+  metadata: jsonb<Metadata>('metadata'),
+});
+
+// Usage
+await db.insert(posts).values({
+  metadata: { tags: ['tech'], views: 0 },
+});
+```
+
+**TypeScript type:** `unknown` (use generic type parameter for type safety)
+
+**SQL type:** `JSONB`
+
+**Note:** `JSONB` is generally preferred over `JSON` for better performance and indexing support.
+
+## UUID Type
+
+### uuid()
+
+PostgreSQL `UUID` type.
+
+```typescript
+import { pgTable, uuid } from 'drizzle-orm/pg-core';
+
+const users = pgTable('users', {
+  // Manual UUID
+  id: uuid('id').primaryKey(),
+  
+  // Auto-generate with gen_random_uuid()
+  id2: uuid('id2').defaultRandom().primaryKey(),
+});
+```
+
+**TypeScript type:** `string`
+
+**SQL type:** `UUID`
+
+**Methods:**
+- `.defaultRandom()`: Sets default to `gen_random_uuid()`
+
+## Network Types
+
+### inet()
+
+PostgreSQL `INET` type for IPv4 or IPv6 addresses.
+
+```typescript
+import { pgTable, inet } from 'drizzle-orm/pg-core';
+
+const logs = pgTable('logs', {
+  ipAddress: inet('ip_address'),
+});
+```
+
+**TypeScript type:** `string`
+
+**SQL type:** `INET`
+
+### cidr()
+
+PostgreSQL `CIDR` type for network addresses.
+
+```typescript
+import { pgTable, cidr } from 'drizzle-orm/pg-core';
+
+const networks = pgTable('networks', {
+  network: cidr('network'),
+});
+```
+
+**TypeScript type:** `string`
+
+**SQL type:** `CIDR`
+
+### macaddr()
+
+PostgreSQL `MACADDR` type for MAC addresses.
+
+```typescript
+import { pgTable, macaddr } from 'drizzle-orm/pg-core';
+
+const devices = pgTable('devices', {
+  mac: macaddr('mac'),
+});
+```
+
+**TypeScript type:** `string`
+
+**SQL type:** `MACADDR`
+
+### macaddr8()
+
+PostgreSQL `MACADDR8` type for MAC addresses (EUI-64 format).
+
+```typescript
+import { pgTable, macaddr8 } from 'drizzle-orm/pg-core';
+
+const devices = pgTable('devices', {
+  mac: macaddr8('mac'),
+});
+```
+
+**TypeScript type:** `string`
+
+**SQL type:** `MACADDR8`
+
+## Geometric Types
+
+### point()
+
+PostgreSQL `POINT` type for geometric points.
+
+```typescript
+import { pgTable, point } from 'drizzle-orm/pg-core';
+
+type Point = { x: number; y: number };
+
+const locations = pgTable('locations', {
+  position: point<Point>('position'),
+});
+```
+
+**TypeScript type:** Configurable via generic
+
+**SQL type:** `POINT`
+
+### line()
+
+PostgreSQL `LINE` type.
+
+```typescript
+import { pgTable, line } from 'drizzle-orm/pg-core';
+
+const geometry = pgTable('geometry', {
+  line: line<{ a: number; b: number; c: number }>('line'),
+});
+```
+
+**SQL type:** `LINE`
+
+## Enum Types
+
+### pgEnum()
+
+Defines a PostgreSQL enum type.
+
+```typescript
+import { pgEnum, pgTable, serial } from 'drizzle-orm/pg-core';
+
+// Define enum
+export const roleEnum = pgEnum('role', ['admin', 'user', 'guest']);
+
+// Use in table
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  role: roleEnum('role').default('user'),
+});
+```
+
+<ParamField path="name" type="string" required>
+  Enum type name in database
+</ParamField>
+
+<ParamField path="values" type="readonly string[]" required>
+  Array of possible values
+</ParamField>
+
+**TypeScript type:** Union of enum values
+
+**SQL type:** Custom `ENUM` type
+
+## Custom Types
+
+### customType()
+
+Defines a custom column type with custom serialization.
+
+```typescript
+import { customType } from 'drizzle-orm/pg-core';
+
+const bytea = customType<{ data: Buffer; notNull: false; default: false }>({
+  dataType() {
+    return 'bytea';
+  },
+  toDriver(value: Buffer): string {
+    return value.toString('hex');
+  },
+  fromDriver(value: string): Buffer {
+    return Buffer.from(value, 'hex');
+  },
+});
+
+const files = pgTable('files', {
+  data: bytea('data'),
+});
+```
+
+## Column Modifiers
+
+All column types support these modifiers:
+
+### .notNull()
+
+Marks column as `NOT NULL`.
+
+```typescript
+name: varchar('name', { length: 255 }).notNull()
+```
+
+### .default()
+
+Sets a default value.
+
+```typescript
+status: varchar('status').default('pending')
+createdAt: timestamp('created_at').defaultNow()
+count: integer('count').default(0)
+```
+
+### .primaryKey()
+
+Marks column as primary key.
+
+```typescript
+id: serial('id').primaryKey()
+```
+
+### .unique()
+
+Adds unique constraint.
+
+```typescript
+email: varchar('email', { length: 255 }).unique()
+```
+
+### .references()
+
+Adds foreign key reference.
+
+```typescript
+userId: integer('user_id').references(() => users.id)
+
+// With options
+userId: integer('user_id').references(() => users.id, { 
+  onDelete: 'cascade',
+  onUpdate: 'cascade',
+})
+```
+
+### .$type()
+
+Overrides TypeScript type without changing runtime behavior.
+
+```typescript
+metadata: json('metadata').$type<{ key: string; value: number }>()
+```

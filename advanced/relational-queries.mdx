@@ -1,0 +1,487 @@
+---
+title: Relational Queries
+description: Master Drizzle's powerful relational query API for type-safe joins and nested data fetching
+---
+
+## Overview
+
+Drizzle's relational query API provides a type-safe, intuitive way to query related data without writing complex SQL joins. Define relationships once in your schema, then query nested data with full TypeScript inference.
+
+## Defining Relations
+
+### One-to-Many Relationships
+
+Use the `relations()` function to define relationships between tables:
+
+```typescript
+import { relations } from 'drizzle-orm';
+import { pgTable, serial, text, integer, timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  content: text('content').notNull(),
+  ownerId: integer('owner_id').references(() => users.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.ownerId],
+    references: [users.id],
+  }),
+}));
+```
+
+### Many-to-Many Relationships
+
+Implement junction tables for many-to-many relationships:
+
+```typescript
+export const groups = pgTable('groups', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const usersToGroups = pgTable('users_to_groups', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  groupId: integer('group_id').notNull().references(() => groups.id),
+});
+
+export const usersRelations = relations(users, ({ many }) => ({
+  usersToGroups: many(usersToGroups),
+}));
+
+export const groupsRelations = relations(groups, ({ many }) => ({
+  usersToGroups: many(usersToGroups),
+}));
+
+export const usersToGroupsRelations = relations(usersToGroups, ({ one }) => ({
+  group: one(groups, {
+    fields: [usersToGroups.groupId],
+    references: [groups.id],
+  }),
+  user: one(users, {
+    fields: [usersToGroups.userId],
+    references: [users.id],
+  }),
+}));
+```
+
+### Self-Referencing Relations
+
+Create hierarchical structures with self-references:
+
+```typescript
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  invitedBy: integer('invited_by').references((): PgColumn => users.id),
+});
+
+export const usersRelations = relations(users, ({ one }) => ({
+  invitee: one(users, {
+    fields: [users.invitedBy],
+    references: [users.id],
+  }),
+}));
+```
+
+## Querying Related Data
+
+### Basic Relational Query
+
+Query with nested relations using the `with` option:
+
+```typescript
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+
+// Result type is fully inferred:
+// {
+//   id: number;
+//   name: string;
+//   posts: {
+//     id: number;
+//     content: string;
+//     ownerId: number | null;
+//     createdAt: Date;
+//   }[];
+// }[]
+```
+
+### Nested Relations
+
+Query multiple levels deep:
+
+```typescript
+const usersWithPostsAndComments = await db.query.users.findMany({
+  with: {
+    posts: {
+      with: {
+        comments: {
+          with: {
+            author: true,
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+### Filtering Related Data
+
+Apply filters, limits, and ordering to nested relations:
+
+```typescript
+import { desc, eq } from 'drizzle-orm';
+
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      where: (posts, { eq }) => eq(posts.published, true),
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+      limit: 5,
+    },
+  },
+});
+```
+
+### Selecting Specific Columns
+
+Choose which columns to include:
+
+```typescript
+const users = await db.query.users.findMany({
+  columns: {
+    id: true,
+    name: true,
+  },
+  with: {
+    posts: {
+      columns: {
+        id: true,
+        content: true,
+      },
+    },
+  },
+});
+```
+
+## Advanced Patterns
+
+### Using Extras for Computed Fields
+
+Add computed columns with SQL expressions:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const users = await db.query.users.findMany({
+  extras: {
+    lowerCaseName: sql<string>`lower(${users.name})`.as('lower_name'),
+  },
+  with: {
+    posts: {
+      extras: (posts, { sql }) => ({
+        contentLength: sql<number>`length(${posts.content})`.as('content_length'),
+      }),
+    },
+  },
+});
+```
+
+### Find One with Relations
+
+Query a single record with relations:
+
+```typescript
+const user = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, 1),
+  with: {
+    posts: true,
+    usersToGroups: {
+      with: {
+        group: true,
+      },
+    },
+  },
+});
+
+if (user) {
+  console.log(user.name);
+  console.log(user.posts.length);
+  user.usersToGroups.forEach(({ group }) => {
+    console.log(group.name);
+  });
+}
+```
+
+### Using Placeholders in Relational Queries
+
+Combine with prepared statements for reusable queries:
+
+```typescript
+import { placeholder } from 'drizzle-orm';
+
+const getUserWithPosts = db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, placeholder('userId')),
+  with: {
+    posts: {
+      limit: placeholder('postsLimit'),
+    },
+  },
+}).prepare('get_user_with_posts');
+
+const result = await getUserWithPosts.execute({
+  userId: 1,
+  postsLimit: 10,
+});
+```
+
+## Performance Considerations
+
+<Note>
+Relational queries generate optimized SQL with JSON aggregation to minimize round trips to the database.
+</Note>
+
+### Understand Query Generation
+
+Drizzle transforms relational queries into efficient SQL:
+
+```typescript
+// This relational query:
+const users = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+
+// Generates SQL similar to:
+// SELECT
+//   users.*,
+//   COALESCE(
+//     json_agg(posts.*) FILTER (WHERE posts.id IS NOT NULL),
+//     '[]'
+//   ) as posts
+// FROM users
+// LEFT JOIN posts ON users.id = posts.owner_id
+// GROUP BY users.id
+```
+
+### Optimize Deep Nesting
+
+<Warning>
+Deeply nested queries can generate complex SQL. Consider splitting into multiple queries for very deep hierarchies.
+</Warning>
+
+```typescript
+// Instead of 4+ levels of nesting:
+const deepData = await db.query.users.findMany({
+  with: {
+    posts: {
+      with: {
+        comments: {
+          with: {
+            likes: {
+              with: {
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
+// Consider splitting into separate queries:
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      with: {
+        comments: true,
+      },
+    },
+  },
+});
+
+const commentIds = users.flatMap(u => 
+  u.posts.flatMap(p => p.comments.map(c => c.id))
+);
+
+const likes = await db.query.commentLikes.findMany({
+  where: (likes, { inArray }) => inArray(likes.commentId, commentIds),
+  with: {
+    user: true,
+  },
+});
+```
+
+## Migration from SQL Queries
+
+### Before: Manual Joins
+
+```typescript
+const result = await db
+  .select({
+    user: users,
+    post: posts,
+  })
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.ownerId));
+
+// Manual grouping required
+const grouped = result.reduce((acc, row) => {
+  const userId = row.user.id;
+  if (!acc[userId]) {
+    acc[userId] = { ...row.user, posts: [] };
+  }
+  if (row.post) {
+    acc[userId].posts.push(row.post);
+  }
+  return acc;
+}, {});
+```
+
+### After: Relational Queries
+
+```typescript
+const result = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+
+// Properly typed and grouped automatically!
+```
+
+## Type Safety
+
+Relational queries provide complete type inference:
+
+```typescript
+const users = await db.query.users.findMany({
+  columns: {
+    id: true,
+    name: true,
+    // email: true, // TypeScript error if column doesn't exist
+  },
+  with: {
+    posts: {
+      columns: {
+        content: true,
+      },
+    },
+    // invalidRelation: true, // TypeScript error if relation not defined
+  },
+});
+
+// Type is inferred as:
+// {
+//   id: number;
+//   name: string;
+//   posts: {
+//     content: string;
+//   }[];
+// }[]
+
+users.forEach(user => {
+  console.log(user.name); // ✓ Valid
+  // console.log(user.email); // ✗ TypeScript error
+  user.posts.forEach(post => {
+    console.log(post.content); // ✓ Valid
+    // console.log(post.id); // ✗ TypeScript error - not selected
+  });
+});
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Define relations in a separate file or alongside tables">
+    Keep your schema organized by grouping tables with their relations.
+  </Step>
+  
+  <Step title="Use explicit field mappings">
+    Always specify `fields` and `references` for one() relations to avoid ambiguity.
+  </Step>
+  
+  <Step title="Leverage TypeScript inference">
+    Let TypeScript guide you with auto-completion instead of referring to docs.
+  </Step>
+  
+  <Step title="Apply filters at the relation level">
+    Use `where` on nested relations for efficient filtering.
+  </Step>
+  
+  <Step title="Limit nested data">
+    Always use `limit` on one-to-many relations in production to prevent excessive data loading.
+  </Step>
+</Steps>
+
+## Common Patterns
+
+### Paginated Nested Data
+
+```typescript
+const users = await db.query.users.findMany({
+  limit: 20,
+  offset: 0,
+  with: {
+    posts: {
+      limit: 5,
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+    },
+  },
+});
+```
+
+### Conditional Relations
+
+Dynamically include relations:
+
+```typescript
+function getUsers(includePosts: boolean) {
+  return db.query.users.findMany({
+    with: includePosts ? {
+      posts: true,
+    } : undefined,
+  });
+}
+```
+
+### Aggregating Related Data
+
+Combine with SQL for counts and aggregations:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const users = await db
+  .select({
+    id: users.id,
+    name: users.name,
+    postCount: sql<number>`count(${posts.id})`,
+  })
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.ownerId))
+  .groupBy(users.id);
+```
+
+<Tip>
+For complex aggregations, consider using the SQL builder alongside relational queries rather than trying to fit everything into the relational API.
+</Tip>

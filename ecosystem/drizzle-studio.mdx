@@ -1,0 +1,464 @@
+---
+title: "Drizzle Studio"
+description: "Visual database browser and editor for exploring and managing your database with Drizzle ORM"
+---
+
+Drizzle Studio is a visual database browser that lets you explore, query, and manage your database through an intuitive web interface. It's built into Drizzle Kit and works with all supported databases.
+
+## Quick Start
+
+Launch Drizzle Studio with a single command:
+
+```bash
+drizzle-kit studio
+```
+
+Studio will start on `https://local.drizzle.studio` (default port: 4983)
+
+<Note>
+Drizzle Studio is currently in Beta. Report issues on [GitHub](https://github.com/drizzle-team/drizzle-kit-mirror/issues) or [Discord](https://discord.gg/WcRKz2FFxN).
+</Note>
+
+## Installation
+
+Drizzle Studio is included with Drizzle Kit:
+
+<CodeGroup>
+```bash npm
+npm install -D drizzle-kit
+```
+
+```bash pnpm
+pnpm add -D drizzle-kit
+```
+
+```bash yarn
+yarn add -D drizzle-kit
+```
+
+```bash bun
+bun add -D drizzle-kit
+```
+</CodeGroup>
+
+## Configuration
+
+Studio uses your existing `drizzle.config.ts` configuration:
+
+```typescript drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema.ts',
+  dbCredentials: {
+    host: process.env.DB_HOST!,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+});
+```
+
+## Command Options
+
+Customize how Studio runs:
+
+```bash
+drizzle-kit studio --port 3000 --host localhost --verbose
+```
+
+### Available Options
+
+- `--config` - Path to config file
+- `--port` - Custom port (default: 4983)
+- `--host` - Custom host (default: 127.0.0.1)
+- `--verbose` - Print all SQL statements executed by Studio
+
+### Examples
+
+<CodeGroup>
+```bash Custom Port
+drizzle-kit studio --port 3000
+```
+
+```bash Custom Host
+drizzle-kit studio --host 0.0.0.0
+```
+
+```bash Verbose Mode
+drizzle-kit studio --verbose
+```
+
+```bash Combined
+drizzle-kit studio --port 5000 --host localhost --verbose
+```
+</CodeGroup>
+
+## Features
+
+### Browse Tables
+
+Studio provides a visual interface to:
+- View all tables in your database
+- See table schemas and column types
+- Inspect indexes and constraints
+- Navigate relationships between tables
+
+### Query Data
+
+Interactively query your database:
+- Browse table data with pagination
+- Filter and sort records
+- Search across columns
+- View related records through foreign keys
+
+### Edit Records
+
+Manage your data directly:
+- Add new records with form validation
+- Edit existing records inline
+- Delete records with confirmation
+- Handle relationships and foreign keys
+
+### Real-time Schema Sync
+
+Studio reads your schema files in real-time:
+- See changes immediately when you update schema
+- No need to restart Studio after schema changes
+- Visual indication of schema structure
+
+### Multi-database Support
+
+Works with all Drizzle-supported databases:
+
+<Tabs>
+  <Tab title="PostgreSQL">
+    ```bash
+    drizzle-kit studio
+    ```
+
+    Supports:
+    - PostgreSQL
+    - AWS RDS Data API
+    - PGlite
+    - Neon
+    - Vercel Postgres
+    - Supabase
+  </Tab>
+
+  <Tab title="MySQL">
+    ```bash
+    drizzle-kit studio
+    ```
+
+    Supports:
+    - MySQL
+    - PlanetScale
+    - TiDB
+  </Tab>
+
+  <Tab title="SQLite">
+    ```bash
+    drizzle-kit studio
+    ```
+
+    Supports:
+    - SQLite
+    - Turso
+    - Cloudflare D1
+    - Bun SQLite
+  </Tab>
+</Tabs>
+
+## Use Cases
+
+### Local Development
+
+Run Studio during development to:
+- Inspect database state while coding
+- Test data changes quickly
+- Debug query results
+- Verify migrations
+
+```json package.json
+{
+  "scripts": {
+    "dev": "next dev",
+    "db:studio": "drizzle-kit studio"
+  }
+}
+```
+
+Run both in parallel:
+```bash
+npm run dev & npm run db:studio
+```
+
+### Data Exploration
+
+Use Studio to explore your data:
+- Understand data relationships
+- Find data inconsistencies
+- Analyze data distribution
+- Export data for analysis
+
+### Database Administration
+
+Perform admin tasks:
+- Manually fix data issues
+- Seed initial data
+- Test foreign key relationships
+- Verify constraints
+
+### Team Collaboration
+
+Share database insights:
+- Demo features with real data
+- Review data with non-technical stakeholders
+- Debug production issues (with read-only replica)
+- Onboard new team members
+
+## Working with Different Databases
+
+### PostgreSQL
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/db/schema.ts',
+  dbCredentials: {
+    host: 'localhost',
+    port: 5432,
+    user: 'postgres',
+    password: 'password',
+    database: 'mydb',
+  },
+});
+```
+
+### MySQL/PlanetScale
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'mysql',
+  schema: './src/db/schema.ts',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+### SQLite
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'sqlite',
+  schema: './src/db/schema.ts',
+  dbCredentials: {
+    url: './dev.db',
+  },
+});
+```
+
+### Turso
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'turso',
+  schema: './src/db/schema.ts',
+  dbCredentials: {
+    url: process.env.TURSO_URL!,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  },
+});
+```
+
+## Advanced Usage
+
+### Verbose Mode for Debugging
+
+Enable verbose mode to see all SQL queries Studio executes:
+
+```bash
+drizzle-kit studio --verbose
+```
+
+This is useful for:
+- Understanding how Studio queries your database
+- Debugging performance issues
+- Learning SQL from Studio's generated queries
+- Troubleshooting connection problems
+
+### Using with Environment Variables
+
+Create a `.env` file for your database credentials:
+
+```bash .env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=secret
+DB_NAME=myapp
+```
+
+Studio automatically loads environment variables when starting.
+
+### Multiple Database Connections
+
+Switch between databases by using different config files:
+
+```bash
+# Production database (read-only recommended)
+drizzle-kit studio --config drizzle.prod.config.ts
+
+# Staging database
+drizzle-kit studio --config drizzle.staging.config.ts
+
+# Development database
+drizzle-kit studio --config drizzle.config.ts
+```
+
+<Warning>
+Be extremely careful when connecting Studio to production databases. Consider using a read-only database user or a replica.
+</Warning>
+
+### Custom Network Configuration
+
+Expose Studio to your local network for team access:
+
+```bash
+drizzle-kit studio --host 0.0.0.0 --port 4983
+```
+
+Then access from other devices:
+```
+https://local.drizzle.studio?host=YOUR_IP&port=4983
+```
+
+## Security Considerations
+
+<Steps>
+  <Step title="Never expose Studio publicly">
+    Studio is designed for local development. Never expose it to the internet without proper authentication.
+  </Step>
+
+  <Step title="Use read-only users in production">
+    If connecting to production databases, use a read-only database user:
+
+    ```sql
+    -- PostgreSQL example
+    CREATE USER studio_readonly WITH PASSWORD 'secure_password';
+    GRANT CONNECT ON DATABASE mydb TO studio_readonly;
+    GRANT USAGE ON SCHEMA public TO studio_readonly;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO studio_readonly;
+    ```
+  </Step>
+
+  <Step title="Protect database credentials">
+    Keep credentials in environment variables, never commit them to version control.
+  </Step>
+
+  <Step title="Use SSL/TLS for remote databases">
+    Enable SSL when connecting to remote databases:
+
+    ```typescript drizzle.config.ts
+    export default defineConfig({
+      dialect: 'postgresql',
+      dbCredentials: {
+        host: 'remote.db.host',
+        ssl: true,
+      },
+    });
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Port Already in Use
+
+If port 4983 is already in use:
+
+```bash
+drizzle-kit studio --port 5000
+```
+
+### Connection Refused
+
+Verify your database is running and credentials are correct:
+
+```bash
+drizzle-kit studio --verbose
+```
+
+Check the console output for connection errors.
+
+### Schema Not Showing
+
+Ensure your schema path is correct in `drizzle.config.ts`:
+
+```typescript
+export default defineConfig({
+  schema: './src/db/schema.ts', // Verify this path
+});
+```
+
+### SSL Certificate Issues
+
+For databases requiring SSL:
+
+```typescript drizzle.config.ts
+export default defineConfig({
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false, // Only for development
+    },
+  },
+});
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Development Workflow" icon="laptop-code">
+    Keep Studio running alongside your dev server for instant database visibility
+  </Card>
+  <Card title="Read-Only Mode" icon="lock">
+    Use read-only database users when connecting to production or staging
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Never commit database credentials - use environment variables
+  </Card>
+  <Card title="Team Sharing" icon="users">
+    Share Studio on local network for collaborative debugging
+  </Card>
+</CardGroup>
+
+## Package Script
+
+Add Studio to your package.json:
+
+```json package.json
+{
+  "scripts": {
+    "db:studio": "drizzle-kit studio",
+    "db:studio:prod": "drizzle-kit studio --config drizzle.prod.config.ts",
+    "db:studio:verbose": "drizzle-kit studio --verbose"
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Drizzle Kit" icon="terminal" href="/ecosystem/drizzle-kit">
+    Learn about migrations and other Drizzle Kit commands
+  </Card>
+  <Card title="Schema Definition" icon="table" href="/schema/tables">
+    Define your database schema with Drizzle ORM
+  </Card>
+</CardGroup>

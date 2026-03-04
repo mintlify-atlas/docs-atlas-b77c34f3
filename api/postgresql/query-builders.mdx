@@ -1,0 +1,578 @@
+---
+title: "PostgreSQL Query Builders"
+description: "API reference for PostgreSQL-specific query builders and methods"
+---
+
+## Select Query Builder
+
+### PgSelectBuilder
+
+Builds SELECT queries with PostgreSQL-specific features.
+
+```typescript
+const result = await db.select()
+  .from(users)
+  .where(eq(users.active, true))
+  .orderBy(users.name)
+  .limit(10);
+```
+
+### from()
+
+Specifies which table or subquery to select from.
+
+```typescript
+// From a table
+db.select().from(users)
+
+// From a subquery
+const sq = db.select().from(users).as('sq');
+db.select().from(sq)
+
+// From multiple tables (cross join)
+db.select().from(users, posts)
+```
+
+<ParamField path="source" type="PgTable | Subquery | PgView" required>
+  Table, view, or subquery to select from
+</ParamField>
+
+### where()
+
+Adds WHERE clause conditions.
+
+```typescript
+import { eq, and, or, gt, lt } from 'drizzle-orm';
+
+// Single condition
+db.select().from(users).where(eq(users.id, 1))
+
+// Multiple conditions with AND
+db.select().from(users).where(
+  and(
+    eq(users.active, true),
+    gt(users.age, 18)
+  )
+)
+
+// OR conditions
+db.select().from(users).where(
+  or(
+    eq(users.role, 'admin'),
+    eq(users.role, 'moderator')
+  )
+)
+```
+
+<ParamField path="condition" type="SQL | undefined" required>
+  SQL condition expression
+</ParamField>
+
+### orderBy()
+
+Adds ORDER BY clause.
+
+```typescript
+import { asc, desc } from 'drizzle-orm';
+
+// Single column ascending
+db.select().from(users).orderBy(users.name)
+
+// Descending
+db.select().from(users).orderBy(desc(users.createdAt))
+
+// Multiple columns
+db.select().from(users).orderBy(
+  asc(users.lastName),
+  desc(users.firstName)
+)
+
+// Using SQL
+db.select().from(users).orderBy(sql`${users.name} COLLATE "C"`)
+```
+
+<ParamField path="columns" type="(PgColumn | SQL)[]" required>
+  Columns or SQL expressions to order by
+</ParamField>
+
+### limit()
+
+Limits the number of returned rows.
+
+```typescript
+db.select().from(users).limit(10)
+```
+
+<ParamField path="limit" type="number" required>
+  Maximum number of rows to return
+</ParamField>
+
+### offset()
+
+Skips a number of rows before returning results.
+
+```typescript
+// Pagination
+const page = 2;
+const pageSize = 10;
+
+db.select()
+  .from(users)
+  .limit(pageSize)
+  .offset(page * pageSize)
+```
+
+<ParamField path="offset" type="number" required>
+  Number of rows to skip
+</ParamField>
+
+### groupBy()
+
+Groups results by columns.
+
+```typescript
+import { count } from 'drizzle-orm';
+
+db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role)
+```
+
+<ParamField path="columns" type="(PgColumn | SQL)[]" required>
+  Columns to group by
+</ParamField>
+
+### having()
+
+Filters grouped results.
+
+```typescript
+import { count, gt } from 'drizzle-orm';
+
+db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role)
+  .having(({ count }) => gt(count, 5))
+```
+
+<ParamField path="condition" type="SQL | (selected: SelectedFields) => SQL" required>
+  Condition to filter groups
+</ParamField>
+
+## PostgreSQL-Specific Select Features
+
+### distinctOn()
+
+PostgreSQL `DISTINCT ON` clause for selecting distinct rows based on specific columns.
+
+```typescript
+// Get latest post for each user
+db.selectDistinctOn([posts.userId], {
+  userId: posts.userId,
+  title: posts.title,
+  createdAt: posts.createdAt,
+})
+  .from(posts)
+  .orderBy(posts.userId, desc(posts.createdAt))
+```
+
+<ParamField path="columns" type="(PgColumn | SQL)[]" required>
+  Columns to determine uniqueness
+</ParamField>
+
+**Note:** When using `DISTINCT ON`, the ORDER BY must start with the same columns.
+
+### for()
+
+Adds locking clauses for concurrent access control.
+
+```typescript
+// FOR UPDATE - lock rows for update
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('update');
+
+// FOR SHARE - lock rows but allow other shared locks
+await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('share');
+
+// With specific tables and options
+await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .for('update', { of: users, noWait: true });
+```
+
+<ParamField path="type" type="'update' | 'no key update' | 'share' | 'key share'" required>
+  Lock type:
+  - `'update'`: Full row lock
+  - `'no key update'`: Lock without blocking foreign key checks
+  - `'share'`: Shared lock (prevents updates)
+  - `'key share'`: Shared lock on key only
+</ParamField>
+
+<ParamField path="config" type="object" optional>
+  Lock options:
+  - `of`: Table to lock (for joins)
+  - `noWait`: Fail immediately if row is locked
+  - `skipLocked`: Skip locked rows
+</ParamField>
+
+## Join Operations
+
+### innerJoin()
+
+```typescript
+db.select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.userId))
+```
+
+### leftJoin()
+
+```typescript
+db.select({
+  user: users,
+  post: posts,
+})
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+```
+
+### rightJoin()
+
+```typescript
+db.select()
+  .from(users)
+  .rightJoin(posts, eq(users.id, posts.userId))
+```
+
+### fullJoin()
+
+```typescript
+db.select()
+  .from(users)
+  .fullJoin(posts, eq(users.id, posts.userId))
+```
+
+All join methods accept:
+
+<ParamField path="table" type="PgTable | Subquery" required>
+  Table or subquery to join
+</ParamField>
+
+<ParamField path="on" type="SQL" required>
+  Join condition
+</ParamField>
+
+## Insert Query Builder
+
+### PgInsertBuilder
+
+Builds INSERT queries with PostgreSQL-specific features.
+
+### values()
+
+Specifies values to insert.
+
+```typescript
+// Insert single row
+await db.insert(users).values({
+  name: 'John',
+  email: 'john@example.com',
+});
+
+// Insert multiple rows
+await db.insert(users).values([
+  { name: 'John', email: 'john@example.com' },
+  { name: 'Jane', email: 'jane@example.com' },
+]);
+```
+
+<ParamField path="values" type="InferInsertModel | InferInsertModel[]" required>
+  Single object or array of objects to insert
+</ParamField>
+
+### onConflictDoNothing()
+
+PostgreSQL `ON CONFLICT DO NOTHING` clause.
+
+```typescript
+// Ignore conflicts on any constraint
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John' })
+  .onConflictDoNothing();
+
+// Ignore conflicts on specific column(s)
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John' })
+  .onConflictDoNothing({ target: users.email });
+```
+
+<ParamField path="config.target" type="PgColumn | PgColumn[]" optional>
+  Specific column(s) that trigger the conflict
+</ParamField>
+
+### onConflictDoUpdate()
+
+PostgreSQL `ON CONFLICT DO UPDATE` clause for upserts.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Update on conflict
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John', score: 10 })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'John Updated', score: sql`${users.score} + 1` },
+  });
+
+// With WHERE clause
+await db.insert(users)
+  .values({ email: 'john@example.com', name: 'John' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'John Updated' },
+    where: sql`${users.active} = true`,
+  });
+```
+
+<ParamField path="config.target" type="PgColumn | PgColumn[]" required>
+  Column(s) that trigger the conflict
+</ParamField>
+
+<ParamField path="config.set" type="object" required>
+  Values to update on conflict
+</ParamField>
+
+<ParamField path="config.where" type="SQL" optional>
+  Condition for when to perform update
+</ParamField>
+
+### returning()
+
+Returns inserted rows.
+
+```typescript
+// Return all columns
+const inserted = await db.insert(users)
+  .values({ name: 'John' })
+  .returning();
+
+// Return specific columns
+const result = await db.insert(users)
+  .values({ name: 'John' })
+  .returning({ id: users.id, name: users.name });
+```
+
+<ParamField path="fields" type="SelectedFields" optional>
+  Columns to return (returns all if omitted)
+</ParamField>
+
+### overridingSystemValue()
+
+Allows inserting values into generated identity columns.
+
+```typescript
+await db.insert(users)
+  .overridingSystemValue()
+  .values({ id: 1, name: 'John' });
+```
+
+## Update Query Builder
+
+### PgUpdateBuilder
+
+Builds UPDATE queries.
+
+### set()
+
+Specifies columns and values to update.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Update with values
+await db.update(users)
+  .set({ name: 'John Updated', email: 'john@example.com' })
+  .where(eq(users.id, 1));
+
+// Update with SQL expressions
+await db.update(products)
+  .set({ 
+    stock: sql`${products.stock} - 1`,
+    updatedAt: sql`now()`,
+  })
+  .where(eq(products.id, 1));
+```
+
+<ParamField path="values" type="Partial<InferInsertModel>" required>
+  Object with column names and new values
+</ParamField>
+
+### where()
+
+Filters which rows to update.
+
+```typescript
+await db.update(users)
+  .set({ active: false })
+  .where(eq(users.email, 'user@example.com'));
+```
+
+### returning()
+
+Returns updated rows.
+
+```typescript
+const updated = await db.update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1))
+  .returning();
+```
+
+## Delete Query Builder
+
+### PgDeleteBase
+
+Builds DELETE queries.
+
+### where()
+
+Specifies which rows to delete.
+
+```typescript
+await db.delete(users)
+  .where(eq(users.id, 1));
+
+// Multiple conditions
+await db.delete(users)
+  .where(
+    and(
+      eq(users.active, false),
+      lt(users.lastLogin, sql`now() - interval '1 year'`)
+    )
+  );
+```
+
+<ParamField path="condition" type="SQL" required>
+  Condition for which rows to delete
+</ParamField>
+
+### returning()
+
+Returns deleted rows.
+
+```typescript
+const deleted = await db.delete(users)
+  .where(eq(users.id, 1))
+  .returning();
+```
+
+## Prepared Statements
+
+All query builders support `.prepare()` for creating reusable prepared statements.
+
+```typescript
+import { placeholder } from 'drizzle-orm';
+
+// Create prepared statement
+const prepared = db.select()
+  .from(users)
+  .where(eq(users.id, placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Execute with parameters
+const user1 = await prepared.execute({ id: 1 });
+const user2 = await prepared.execute({ id: 2 });
+```
+
+<ParamField path="name" type="string" optional>
+  Name for the prepared statement
+</ParamField>
+
+## Batch Operations
+
+Execute multiple queries in a single round trip.
+
+```typescript
+const results = await db.batch([
+  db.select().from(users),
+  db.select().from(posts),
+  db.insert(logs).values({ message: 'Batch executed' }),
+]);
+
+// results is an array with results from each query
+const [usersResult, postsResult, insertResult] = results;
+```
+
+<ParamField path="queries" type="Query[]" required>
+  Array of queries to execute
+</ParamField>
+
+## Refresh Materialized View
+
+### PgRefreshMaterializedView
+
+Refreshes PostgreSQL materialized views.
+
+```typescript
+// Basic refresh
+await db.refreshMaterializedView(myMaterializedView);
+
+// Concurrent refresh (requires unique index)
+await db.refreshMaterializedView(myMaterializedView).concurrently();
+```
+
+### concurrently()
+
+Enables concurrent refresh (PostgreSQL `REFRESH MATERIALIZED VIEW CONCURRENTLY`).
+
+```typescript
+await db.refreshMaterializedView(myView).concurrently();
+```
+
+**Note:** Requires a unique index on the materialized view.
+
+## Raw SQL
+
+Execute raw SQL queries.
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Select with raw SQL
+const result = await db.execute(
+  sql`SELECT * FROM users WHERE email = ${'john@example.com'}`
+);
+
+// Raw SQL in queries
+const users = await db.select({
+  id: users.id,
+  upperName: sql<string>`upper(${users.name})`.as('upper_name'),
+}).from(users);
+```
+
+## Query Builder Utility
+
+### QueryBuilder
+
+Low-level query builder used internally.
+
+```typescript
+import { QueryBuilder } from 'drizzle-orm/pg-core';
+
+const qb = new QueryBuilder();
+```
+
+Generally not used directly - use database instance methods instead.

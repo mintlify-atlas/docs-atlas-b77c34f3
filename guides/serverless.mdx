@@ -1,0 +1,588 @@
+---
+title: "Serverless Databases"
+description: "Use Drizzle ORM with serverless database platforms for scalable, edge-ready applications"
+---
+
+Drizzle ORM provides first-class support for serverless database platforms, offering optimized drivers and connection pooling designed for serverless environments where traditional database connections don't work well.
+
+## Why Serverless Databases?
+
+Serverless databases solve key challenges in modern applications:
+
+- **No connection limits**: HTTP-based connections instead of persistent TCP connections
+- **Global edge networks**: Deploy your database queries close to users worldwide  
+- **Pay-per-use pricing**: Only pay for actual query execution time
+- **Auto-scaling**: Handle traffic spikes without manual intervention
+- **Zero maintenance**: No server management or patching required
+
+## Supported Platforms
+
+Drizzle supports all major serverless database platforms with dedicated, optimized drivers.
+
+<CardGroup cols={2}>
+
+<Card title="Neon" icon="database" href="#neon-postgres">
+  Serverless Postgres with instant branching and autoscaling
+</Card>
+
+<Card title="PlanetScale" icon="planet" href="#planetscale-mysql">
+  Serverless MySQL with branching workflows
+</Card>
+
+<Card title="Turso (LibSQL)" icon="server" href="#turso-libsql">
+  Edge SQLite with global replication
+</Card>
+
+<Card title="Vercel Postgres" icon="triangle" href="#vercel-postgres">
+  Postgres designed for Vercel deployments
+</Card>
+
+</CardGroup>
+
+## Neon Postgres
+
+Neon is a serverless Postgres platform with instant branching, autoscaling, and a generous free tier.
+
+### Installation
+
+<CodeGroup>
+
+```bash npm
+npm install drizzle-orm @neondatabase/serverless
+```
+
+```bash pnpm
+pnpm add drizzle-orm @neondatabase/serverless
+```
+
+```bash yarn
+yarn add drizzle-orm @neondatabase/serverless
+```
+
+```bash bun
+bun add drizzle-orm @neondatabase/serverless
+```
+
+</CodeGroup>
+
+### HTTP Connection (Recommended for Edge)
+
+The HTTP driver works everywhere, including edge runtimes, with no WebSocket requirements.
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
+
+// Direct connection string
+const sql = neon(process.env.DATABASE_URL!);
+const db = drizzle(sql);
+
+// Or with config object
+const db = drizzle({
+  connection: process.env.DATABASE_URL!,
+});
+
+// Query your database
+const users = await db.select().from(usersTable);
+```
+
+<Note>
+The HTTP driver is perfect for Cloudflare Workers, Vercel Edge Functions, and other environments where WebSockets aren't available.
+</Note>
+
+### WebSocket Connection (Better Performance)
+
+For Node.js and environments with WebSocket support, use the WebSocket driver for lower latency.
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from '@neondatabase/serverless';
+
+// Create connection pool
+const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
+const db = drizzle(pool);
+
+// Use prepared statements for better performance
+const preparedQuery = db.select().from(usersTable).prepare();
+const users = await preparedQuery.execute();
+```
+
+### Batch Queries
+
+Both HTTP and WebSocket drivers support efficient batch operations:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { users, posts } from './schema';
+
+const db = drizzle({ connection: process.env.DATABASE_URL! });
+
+// Execute multiple queries in a single round trip
+const results = await db.batch([
+  db.select().from(users),
+  db.select().from(posts),
+  db.insert(users).values({ name: 'John' }),
+]);
+
+const [allUsers, allPosts, insertResult] = results;
+```
+
+### Row-Level Security with Auth Tokens
+
+Neon supports PostgreSQL Row-Level Security (RLS) with JWT authentication:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+
+const db = drizzle({ connection: process.env.DATABASE_URL! });
+
+// Execute queries with user-specific auth token
+const userPosts = await db
+  .$withAuth(userJwtToken)
+  .select()
+  .from(posts)
+  .where(eq(posts.userId, userId));
+```
+
+## PlanetScale MySQL
+
+PlanetScale is a serverless MySQL platform with branching, non-blocking schema changes, and automatic backups.
+
+### Installation
+
+<CodeGroup>
+
+```bash npm
+npm install drizzle-orm @planetscale/database
+```
+
+```bash pnpm
+pnpm add drizzle-orm @planetscale/database
+```
+
+```bash yarn
+yarn add drizzle-orm @planetscale/database
+```
+
+```bash bun
+bun add drizzle-orm @planetscale/database
+```
+
+</CodeGroup>
+
+### Basic Setup
+
+```typescript
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import { Client } from '@planetscale/database';
+
+// Using connection string
+const db = drizzle({
+  connection: process.env.DATABASE_URL!,
+});
+
+// Or create client manually for more control
+const client = new Client({
+  host: process.env.DATABASE_HOST!,
+  username: process.env.DATABASE_USERNAME!,
+  password: process.env.DATABASE_PASSWORD!,
+});
+
+const db = drizzle(client);
+```
+
+### Edge Runtime Compatible
+
+PlanetScale's HTTP-based driver works in all JavaScript environments:
+
+```typescript
+// Cloudflare Workers
+export default {
+  async fetch(request: Request, env: Env) {
+    const db = drizzle({
+      connection: env.DATABASE_URL,
+    });
+    
+    const users = await db.select().from(usersTable);
+    return Response.json(users);
+  },
+};
+```
+
+<Warning>
+PlanetScale doesn't support foreign key constraints at the database level. Use Drizzle's relational queries for referential integrity in your application.
+</Warning>
+
+### Schema Design for PlanetScale
+
+```typescript
+import { mysqlTable, serial, varchar, int, index } from 'drizzle-orm/mysql-core';
+
+// Define relationships in code, not as database constraints
+export const users = mysqlTable('users', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+});
+
+export const posts = mysqlTable('posts', {
+  id: serial('id').primaryKey(),
+  userId: int('user_id').notNull(), // No .references()
+  title: varchar('title', { length: 255 }).notNull(),
+}, (table) => ({
+  userIdIdx: index('user_id_idx').on(table.userId), // Manual index
+}));
+```
+
+## Turso (LibSQL)
+
+Turso provides edge-replicated SQLite databases with multi-region support and embedded replicas.
+
+### Installation
+
+<CodeGroup>
+
+```bash npm
+npm install drizzle-orm @libsql/client
+```
+
+```bash pnpm  
+pnpm add drizzle-orm @libsql/client
+```
+
+```bash yarn
+yarn add drizzle-orm @libsql/client
+```
+
+```bash bun
+bun add drizzle-orm @libsql/client
+```
+
+</CodeGroup>
+
+### Remote Database
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+
+// Connect to Turso database
+const db = drizzle({
+  connection: {
+    url: process.env.TURSO_DATABASE_URL!,
+    authToken: process.env.TURSO_AUTH_TOKEN!,
+  },
+});
+
+const users = await db.select().from(usersTable);
+```
+
+### Embedded Replicas (Best Performance)
+
+Embedded replicas sync a local SQLite database with your remote Turso database for ultra-low latency reads:
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+
+const db = drizzle({
+  connection: {
+    url: 'file:local.db', // Local SQLite file
+    syncUrl: process.env.TURSO_DATABASE_URL!,
+    authToken: process.env.TURSO_AUTH_TOKEN!,
+    syncInterval: 60, // Sync every 60 seconds
+  },
+});
+
+// Reads are instant from local database
+const users = await db.select().from(usersTable);
+
+// Writes sync to remote database
+await db.insert(usersTable).values({ name: 'Alice' });
+
+// Manual sync if needed
+await db.$client.sync();
+```
+
+<Tip>
+Embedded replicas are perfect for Next.js applications deployed to multiple regions. Each region maintains its own local replica for fast reads.
+</Tip>
+
+### Transactions
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  await tx.insert(posts).values({ 
+    userId: 1, 
+    title: 'First Post' 
+  });
+});
+```
+
+## Vercel Postgres
+
+Vercel Postgres is a serverless Postgres database integrated with the Vercel platform.
+
+### Installation
+
+<CodeGroup>
+
+```bash npm
+npm install drizzle-orm @vercel/postgres
+```
+
+```bash pnpm
+pnpm add drizzle-orm @vercel/postgres
+```
+
+```bash yarn
+yarn add drizzle-orm @vercel/postgres
+```
+
+```bash bun
+bun add drizzle-orm @vercel/postgres
+```
+
+</CodeGroup>
+
+### Setup
+
+```typescript
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import { sql } from '@vercel/postgres';
+
+// Uses environment variables automatically in Vercel
+const db = drizzle();
+
+// Or pass client explicitly
+const db = drizzle(sql);
+```
+
+<Note>
+Vercel automatically injects `POSTGRES_URL` and other connection variables when you create a Vercel Postgres database.
+</Note>
+
+### Edge Function Example
+
+```typescript
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import { users } from './schema';
+
+export const runtime = 'edge';
+
+export async function GET() {
+  const db = drizzle();
+  const allUsers = await db.select().from(users);
+  
+  return Response.json(allUsers);
+}
+```
+
+## Connection Pooling
+
+Serverless databases handle connection pooling automatically, but you can optimize configuration:
+
+### Neon Pooling
+
+```typescript
+import { Pool } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL!,
+  max: 10, // Maximum connections in pool
+});
+
+const db = drizzle(pool);
+```
+
+### Connection String Options
+
+Most serverless providers support pooling via query parameters:
+
+```typescript
+// Neon with connection pooling
+const db = drizzle({
+  connection: `${process.env.DATABASE_URL}?sslmode=require&pooler=true`,
+});
+```
+
+## Best Practices
+
+<Steps>
+
+<Step title="Use connection pooling">
+  Enable connection pooling in your database URL or use a pooling service like PgBouncer to prevent connection exhaustion.
+</Step>
+
+<Step title="Minimize cold starts">
+  Keep your database client initialization outside request handlers when possible:
+  
+  ```typescript
+  // Good: Initialize once
+  const db = drizzle({ connection: process.env.DATABASE_URL! });
+  
+  export async function handler(event) {
+    const users = await db.select().from(usersTable);
+  }
+  ```
+</Step>
+
+<Step title="Use prepared statements">
+  For frequently executed queries, use prepared statements to reduce parsing overhead:
+  
+  ```typescript
+  const getUserById = db
+    .select()
+    .from(users)
+    .where(eq(users.id, sql.placeholder('id')))
+    .prepare();
+  
+  const user = await getUserById.execute({ id: 123 });
+  ```
+</Step>
+
+<Step title="Batch related queries">
+  Reduce round trips by batching queries when supported:
+  
+  ```typescript
+  const [userResult, postsResult] = await db.batch([
+    db.select().from(users).where(eq(users.id, userId)),
+    db.select().from(posts).where(eq(posts.userId, userId)),
+  ]);
+  ```
+</Step>
+
+<Step title="Handle connection errors">
+  Always implement retry logic and graceful degradation:
+  
+  ```typescript
+  try {
+    const users = await db.select().from(usersTable);
+  } catch (error) {
+    console.error('Database query failed:', error);
+    // Return cached data or error response
+  }
+  ```
+</Step>
+
+</Steps>
+
+## Migration Strategies
+
+### Neon & Vercel Postgres
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-http';
+import { migrate } from 'drizzle-orm/neon-http/migrator';
+
+const db = drizzle({ connection: process.env.DATABASE_URL! });
+
+// Run migrations
+await migrate(db, { migrationsFolder: './drizzle' });
+```
+
+### PlanetScale
+
+<Warning>
+PlanetScale uses a branch-based workflow instead of traditional migrations. Use Drizzle Kit to push schema changes to branches.
+</Warning>
+
+```bash
+# Push schema to development branch
+drizzle-kit push --config=drizzle.config.ts
+
+# Create deploy request in PlanetScale dashboard
+# Merge to production when ready
+```
+
+### Turso
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+
+const db = drizzle({ connection: { url: process.env.TURSO_DATABASE_URL! } });
+
+await migrate(db, { migrationsFolder: './drizzle' });
+```
+
+## Monitoring and Debugging
+
+### Enable Query Logging
+
+```typescript
+const db = drizzle({
+  connection: process.env.DATABASE_URL!,
+  logger: true, // Log all queries to console
+});
+```
+
+### Custom Logger
+
+```typescript
+import { DefaultLogger } from 'drizzle-orm';
+
+class MyLogger extends DefaultLogger {
+  override logQuery(query: string, params: unknown[]): void {
+    console.log({ query, params, timestamp: new Date() });
+    // Send to your monitoring service
+  }
+}
+
+const db = drizzle({
+  connection: process.env.DATABASE_URL!,
+  logger: new MyLogger(),
+});
+```
+
+## Pricing Considerations
+
+<AccordionGroup>
+
+<Accordion title="Neon">
+  - Free tier: 0.5 GB storage, 1 project
+  - Pay for compute time and storage separately
+  - Autoscaling to zero when inactive
+  - Branch databases are free
+</Accordion>
+
+<Accordion title="PlanetScale">
+  - Free tier: 5 GB storage, 1 billion row reads/month
+  - Pay for storage and row reads/writes
+  - Branch databases don't count toward limits during development
+</Accordion>
+
+<Accordion title="Turso">
+  - Free tier: 9 GB total storage across all databases
+  - Pay for storage and rows read
+  - Edge replicas included in all plans
+</Accordion>
+
+<Accordion title="Vercel Postgres">
+  - Free tier: 256 MB storage, 60 hours compute/month  
+  - Integrated billing with Vercel
+  - Automatic scaling included
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+
+<Card title="Edge Runtime Guide" icon="globe" href="/guides/edge-runtime">
+  Deploy Drizzle to edge networks worldwide
+</Card>
+
+<Card title="Best Practices" icon="star" href="/guides/best-practices">
+  Optimize performance and security
+</Card>
+
+<Card title="Schema Design" icon="diagram-project" href="/essentials/schema">
+  Learn how to design efficient database schemas
+</Card>
+
+<Card title="Drizzle Kit" icon="wrench" href="/essentials/drizzle-kit">
+  Manage migrations and schema changes
+</Card>
+
+</CardGroup>

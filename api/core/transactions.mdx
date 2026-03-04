@@ -1,0 +1,415 @@
+---
+title: Transactions API
+description: Complete API reference for database transactions in Drizzle ORM across PostgreSQL, MySQL, and SQLite.
+---
+
+Drizzle ORM provides a robust transaction API that ensures atomicity, consistency, isolation, and durability (ACID) for your database operations. Transactions work across PostgreSQL, MySQL, and SQLite with database-specific configuration options.
+
+## Import
+
+```typescript
+// Transactions are available on the database instance
+import { db } from './db';
+```
+
+## Basic Transaction
+
+### db.transaction()
+
+Execute multiple operations within a single transaction:
+
+<ParamField path="callback" type="function" required>
+  Async function that receives the transaction object and performs database operations
+</ParamField>
+
+<ParamField path="config" type="TransactionConfig">
+  Database-specific transaction configuration
+</ParamField>
+
+```typescript
+const result = await db.transaction(async (tx) => {
+  const user = await tx.insert(users).values({
+    name: 'John Doe',
+    email: 'john@example.com',
+  }).returning();
+
+  await tx.insert(profiles).values({
+    userId: user[0].id,
+    bio: 'Software developer',
+  });
+
+  return user[0];
+});
+```
+
+All operations within the callback are executed in a single transaction. If any operation fails or an error is thrown, the entire transaction is automatically rolled back.
+
+## Transaction Rollback
+
+### Automatic Rollback
+
+Transactions automatically roll back when an error is thrown:
+
+```typescript
+try {
+  await db.transaction(async (tx) => {
+    await tx.insert(users).values({ name: 'John' });
+    
+    // This will cause a rollback
+    throw new Error('Something went wrong');
+    
+    // This won't execute
+    await tx.insert(posts).values({ title: 'Hello' });
+  });
+} catch (error) {
+  console.error('Transaction rolled back:', error);
+}
+```
+
+### Manual Rollback
+
+Explicitly roll back a transaction using `tx.rollback()`:
+
+```typescript
+await db.transaction(async (tx) => {
+  const user = await tx.insert(users).values({ name: 'John' }).returning();
+  
+  if (user[0].id < 0) {
+    // Manually trigger a rollback
+    tx.rollback();
+  }
+  
+  await tx.insert(profiles).values({ userId: user[0].id });
+});
+```
+
+<Note>
+  Calling `tx.rollback()` throws a `TransactionRollbackError` internally, which causes the transaction to be rolled back gracefully.
+</Note>
+
+## PostgreSQL Transactions
+
+### Transaction Configuration
+
+<ParamField path="isolationLevel" type="string">
+  Transaction isolation level
+  - `'read uncommitted'`
+  - `'read committed'` (default)
+  - `'repeatable read'`
+  - `'serializable'`
+</ParamField>
+
+<ParamField path="accessMode" type="string">
+  Transaction access mode
+  - `'read only'`
+  - `'read write'` (default)
+</ParamField>
+
+<ParamField path="deferrable" type="boolean">
+  Whether the transaction can be deferred (only for read-only serializable transactions)
+</ParamField>
+
+```typescript
+await db.transaction(async (tx) => {
+  // Transaction operations
+  const users = await tx.select().from(usersTable);
+  return users;
+}, {
+  isolationLevel: 'serializable',
+  accessMode: 'read only',
+  deferrable: true,
+});
+```
+
+### Setting Transaction Properties
+
+You can modify transaction properties after it starts:
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.setTransaction({
+    isolationLevel: 'repeatable read',
+    accessMode: 'read write',
+  });
+  
+  // Perform operations with new settings
+  await tx.insert(users).values({ name: 'Jane' });
+});
+```
+
+### Isolation Levels Explained
+
+**Read Uncommitted**: Lowest isolation level, allows dirty reads
+
+**Read Committed**: Prevents dirty reads, default for PostgreSQL
+
+**Repeatable Read**: Prevents dirty and non-repeatable reads
+
+**Serializable**: Highest isolation level, fully isolated from other transactions
+
+## MySQL Transactions
+
+### Transaction Configuration
+
+<ParamField path="isolationLevel" type="string" required>
+  Transaction isolation level
+  - `'read uncommitted'`
+  - `'read committed'`
+  - `'repeatable read'` (default)
+  - `'serializable'`
+</ParamField>
+
+<ParamField path="accessMode" type="string">
+  Transaction access mode
+  - `'read only'`
+  - `'read write'` (default)
+</ParamField>
+
+<ParamField path="withConsistentSnapshot" type="boolean">
+  Start transaction with a consistent snapshot (InnoDB)
+</ParamField>
+
+```typescript
+await db.transaction(async (tx) => {
+  const users = await tx.select().from(usersTable);
+  return users;
+}, {
+  isolationLevel: 'repeatable read',
+  accessMode: 'read only',
+  withConsistentSnapshot: true,
+});
+```
+
+## SQLite Transactions
+
+### Transaction Configuration
+
+<ParamField path="behavior" type="string">
+  Transaction behavior mode
+  - `'deferred'` (default) - Lock acquired on first read/write
+  - `'immediate'` - Write lock acquired immediately
+  - `'exclusive'` - Exclusive lock acquired immediately
+</ParamField>
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+}, {
+  behavior: 'immediate',
+});
+```
+
+### Transaction Behaviors Explained
+
+**Deferred**: No locks acquired until first database access. Good for read-mostly transactions.
+
+**Immediate**: Write lock acquired at transaction start. Prevents other write transactions from starting.
+
+**Exclusive**: Exclusive lock acquired immediately. No other transactions (read or write) can proceed.
+
+## Nested Transactions (Savepoints)
+
+Drizzle supports nested transactions using savepoints:
+
+### PostgreSQL Savepoints
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  
+  // Nested transaction
+  await tx.transaction(async (tx2) => {
+    await tx2.insert(posts).values({ title: 'Post 1' });
+    
+    // This rolls back only the nested transaction
+    throw new Error('Nested error');
+  }).catch(() => {
+    console.log('Nested transaction rolled back');
+  });
+  
+  // This still executes - outer transaction continues
+  await tx.insert(posts).values({ title: 'Post 2' });
+});
+```
+
+### MySQL Savepoints
+
+<Note>
+  MySQL savepoints only work with the InnoDB storage engine.
+</Note>
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'Alice' });
+  
+  try {
+    await tx.transaction(async (nestedTx) => {
+      await nestedTx.insert(profiles).values({ bio: 'Developer' });
+      throw new Error('Rollback nested');
+    });
+  } catch (e) {
+    // Nested transaction rolled back, outer continues
+  }
+  
+  await tx.insert(posts).values({ title: 'Article' });
+});
+```
+
+### SQLite Savepoints
+
+```typescript
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'Bob' });
+  
+  await tx.transaction(async (tx2) => {
+    await tx2.insert(posts).values({ title: 'Draft' });
+    // Nested transaction operations
+  });
+});
+```
+
+## Transaction Best Practices
+
+### Keep Transactions Short
+
+```typescript
+// Good - short transaction
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  await tx.insert(profiles).values({ userId: 1 });
+});
+
+// Avoid - long-running transaction
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  await new Promise(resolve => setTimeout(resolve, 5000)); // Don't do this
+  await tx.insert(profiles).values({ userId: 1 });
+});
+```
+
+### Error Handling
+
+```typescript
+try {
+  const result = await db.transaction(async (tx) => {
+    const user = await tx.insert(users).values({
+      name: 'John',
+    }).returning();
+    
+    if (!user[0]) {
+      throw new Error('User creation failed');
+    }
+    
+    return user[0];
+  });
+  
+  console.log('Transaction successful:', result);
+} catch (error) {
+  console.error('Transaction failed:', error);
+  // Handle error appropriately
+}
+```
+
+### Avoid External Side Effects
+
+```typescript
+// Bad - external side effects in transaction
+await db.transaction(async (tx) => {
+  await tx.insert(users).values({ name: 'John' });
+  
+  // Don't do this - if transaction rolls back, email is already sent
+  await sendEmail('welcome@example.com');
+});
+
+// Good - side effects after transaction
+const result = await db.transaction(async (tx) => {
+  return await tx.insert(users).values({ name: 'John' }).returning();
+});
+
+// Safe to send email now
+await sendEmail('welcome@example.com', result[0]);
+```
+
+## Read-Only Transactions
+
+Optimize read-heavy operations:
+
+```typescript
+// PostgreSQL
+const users = await db.transaction(async (tx) => {
+  const users = await tx.select().from(usersTable);
+  const posts = await tx.select().from(postsTable);
+  
+  return { users, posts };
+}, {
+  accessMode: 'read only',
+});
+
+// MySQL
+const data = await db.transaction(async (tx) => {
+  return await tx.select().from(usersTable);
+}, {
+  isolationLevel: 'read committed',
+  accessMode: 'read only',
+});
+```
+
+## Common Patterns
+
+### Batch Inserts with Dependency
+
+```typescript
+await db.transaction(async (tx) => {
+  // Insert user first
+  const [user] = await tx.insert(users).values({
+    name: 'John Doe',
+    email: 'john@example.com',
+  }).returning();
+  
+  // Use user.id for dependent inserts
+  await tx.insert(posts).values([
+    { authorId: user.id, title: 'First Post' },
+    { authorId: user.id, title: 'Second Post' },
+  ]);
+});
+```
+
+### Conditional Operations
+
+```typescript
+await db.transaction(async (tx) => {
+  const user = await tx.query.users.findFirst({
+    where: eq(users.email, 'john@example.com'),
+  });
+  
+  if (user) {
+    await tx.update(users)
+      .set({ lastLogin: new Date() })
+      .where(eq(users.id, user.id));
+  } else {
+    await tx.insert(users).values({
+      email: 'john@example.com',
+      name: 'John Doe',
+    });
+  }
+});
+```
+
+### Atomic Counter Updates
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+await db.transaction(async (tx) => {
+  await tx.update(posts)
+    .set({ views: sql`${posts.views} + 1` })
+    .where(eq(posts.id, postId));
+});
+```
+
+## Related APIs
+
+- [SQL](/api/core/sql) - Use raw SQL in transactions
+- [Migrations](/api/core/migrations) - Schema migrations
+- [Insert](/queries/insert) - Insert operations
+- [Update](/queries/update) - Update operations

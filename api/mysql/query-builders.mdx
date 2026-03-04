@@ -1,0 +1,783 @@
+---
+title: MySQL Query Builders
+description: API reference for MySQL query builders in Drizzle ORM - select, insert, update, delete
+---
+
+Drizzle ORM provides type-safe query builders for all MySQL operations. Each query builder provides a fluent API with method chaining.
+
+## Select Query Builder
+
+### MySqlSelectBuilder
+
+Builds SELECT queries with support for joins, filters, ordering, and aggregations.
+
+#### from()
+
+Specifies the table or subquery to select from.
+
+```typescript
+from<TFrom extends MySqlTable | Subquery | MySqlViewBase | SQL>(
+  source: TFrom,
+  onIndex?: IndexConfig
+): MySqlSelectBase
+```
+
+<ParamField path="source" type="MySqlTable | Subquery | MySqlViewBase | SQL" required>
+  The table, view, subquery, or SQL expression to select from.
+</ParamField>
+
+<ParamField path="onIndex" type="IndexConfig" optional>
+  Index hints for query optimization (only for tables).
+</ParamField>
+
+#### Examples
+
+```typescript
+// Select from table
+const users = await db.select().from(users);
+
+// Select from subquery
+const sq = db.select({ id: users.id }).from(users).as('sq');
+const result = await db.select().from(sq);
+
+// With index hints
+const result = await db.select()
+  .from(users, {
+    useIndex: 'email_idx',
+    forceIndex: ['name_idx', 'created_idx']
+  });
+```
+
+---
+
+#### where()
+
+Adds WHERE clause filters to the query.
+
+```typescript
+where(condition: SQL | undefined): this
+```
+
+#### Examples
+
+```typescript
+import { eq, and, or, gt, like } from 'drizzle-orm';
+
+// Simple condition
+const result = await db.select()
+  .from(users)
+  .where(eq(users.id, 1));
+
+// Multiple conditions with AND
+const result = await db.select()
+  .from(users)
+  .where(and(
+    eq(users.status, 'active'),
+    gt(users.age, 18)
+  ));
+
+// OR conditions
+const result = await db.select()
+  .from(users)
+  .where(or(
+    eq(users.role, 'admin'),
+    eq(users.role, 'moderator')
+  ));
+
+// Pattern matching
+const result = await db.select()
+  .from(users)
+  .where(like(users.email, '%@example.com'));
+```
+
+---
+
+#### orderBy()
+
+Orders the results by one or more columns.
+
+```typescript
+orderBy(...columns: (MySqlColumn | SQL)[]): this
+```
+
+#### Examples
+
+```typescript
+import { asc, desc } from 'drizzle-orm';
+
+// Single column ascending
+await db.select().from(users).orderBy(users.name);
+
+// Descending order
+await db.select().from(users).orderBy(desc(users.createdAt));
+
+// Multiple columns
+await db.select()
+  .from(users)
+  .orderBy(asc(users.lastName), desc(users.firstName));
+
+// With SQL expression
+await db.select()
+  .from(users)
+  .orderBy(sql`LENGTH(${users.name})`);
+```
+
+---
+
+#### limit()
+
+Limits the number of rows returned.
+
+```typescript
+limit(limit: number | Placeholder): this
+```
+
+#### Examples
+
+```typescript
+// Fixed limit
+await db.select().from(users).limit(10);
+
+// With prepared statement
+const stmt = db.select().from(users).limit(sql.placeholder('limit')).prepare();
+await stmt.execute({ limit: 10 });
+```
+
+---
+
+#### offset()
+
+Skips a number of rows before returning results.
+
+```typescript
+offset(offset: number | Placeholder): this
+```
+
+#### Examples
+
+```typescript
+// Pagination
+await db.select()
+  .from(users)
+  .limit(20)
+  .offset(40); // Skip first 40, return next 20
+
+// Dynamic offset
+const page = 3;
+const pageSize = 20;
+await db.select()
+  .from(users)
+  .limit(pageSize)
+  .offset((page - 1) * pageSize);
+```
+
+---
+
+#### groupBy()
+
+Groups results by one or more columns.
+
+```typescript
+groupBy(...columns: (MySqlColumn | SQL)[]): this
+```
+
+#### Examples
+
+```typescript
+import { sql, count } from 'drizzle-orm';
+
+// Group by single column
+const result = await db.select({
+  role: users.role,
+  count: count()
+})
+.from(users)
+.groupBy(users.role);
+
+// Group by multiple columns
+const result = await db.select({
+  country: users.country,
+  city: users.city,
+  count: count()
+})
+.from(users)
+.groupBy(users.country, users.city);
+```
+
+---
+
+#### having()
+
+Filters grouped results (use after `groupBy`).
+
+```typescript
+having(condition: SQL | undefined): this
+```
+
+#### Examples
+
+```typescript
+import { sql, count, gt } from 'drizzle-orm';
+
+const result = await db.select({
+  role: users.role,
+  count: count()
+})
+.from(users)
+.groupBy(users.role)
+.having(gt(count(), 5)); // Only groups with more than 5 users
+```
+
+---
+
+### Joins
+
+#### innerJoin()
+
+Performs an INNER JOIN.
+
+```typescript
+innerJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL
+): this
+```
+
+#### Examples
+
+```typescript
+import { eq } from 'drizzle-orm';
+
+const result = await db.select()
+  .from(users)
+  .innerJoin(posts, eq(users.id, posts.authorId));
+
+// Multiple joins
+const result = await db.select({
+  user: users,
+  post: posts,
+  category: categories
+})
+.from(users)
+.innerJoin(posts, eq(users.id, posts.authorId))
+.innerJoin(categories, eq(posts.categoryId, categories.id));
+```
+
+---
+
+#### leftJoin()
+
+Performs a LEFT JOIN (includes all rows from left table).
+
+```typescript
+leftJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL
+): this
+```
+
+#### Examples
+
+```typescript
+// Get all users with their posts (if any)
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.authorId));
+```
+
+---
+
+#### rightJoin()
+
+Performs a RIGHT JOIN (includes all rows from right table).
+
+```typescript
+rightJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL
+): this
+```
+
+---
+
+#### fullJoin()
+
+Performs a FULL OUTER JOIN.
+
+```typescript
+fullJoin<TJoinedTable>(
+  table: TJoinedTable,
+  on: SQL
+): this
+```
+
+---
+
+### Locking
+
+#### for()
+
+Adds locking clause (FOR UPDATE or FOR SHARE).
+
+```typescript
+for(strength: 'update' | 'share', config?: {
+  noWait?: boolean;
+  skipLocked?: boolean;
+  of?: MySqlTable;
+}): this
+```
+
+#### Examples
+
+```typescript
+// FOR UPDATE (exclusive lock)
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('update');
+
+// FOR SHARE (shared lock)
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('share');
+
+// With NOWAIT
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('update', { noWait: true });
+
+// With SKIP LOCKED
+const jobs = await db.select()
+  .from(queue)
+  .where(eq(queue.status, 'pending'))
+  .limit(10)
+  .for('update', { skipLocked: true });
+```
+
+---
+
+### Set Operations
+
+#### union()
+
+Combines results from multiple queries (removes duplicates).
+
+```typescript
+union<T extends MySqlSelect>(
+  ...queries: T[]
+): MySqlSelectWithout<this, 'union' | 'unionAll' | 'intersect' | 'except'>
+```
+
+#### Examples
+
+```typescript
+const activeUsers = db.select().from(users).where(eq(users.status, 'active'));
+const premiumUsers = db.select().from(users).where(eq(users.plan, 'premium'));
+
+const result = await activeUsers.union(premiumUsers);
+```
+
+---
+
+#### unionAll()
+
+Combines results from multiple queries (keeps duplicates).
+
+```typescript
+unionAll<T extends MySqlSelect>(
+  ...queries: T[]
+): MySqlSelectWithout<this, 'union' | 'unionAll' | 'intersect' | 'except'>
+```
+
+---
+
+#### intersect()
+
+Returns only rows that appear in all queries.
+
+```typescript
+intersect<T extends MySqlSelect>(
+  ...queries: T[]
+): MySqlSelectWithout<this, 'union' | 'unionAll' | 'intersect' | 'except'>
+```
+
+---
+
+#### except()
+
+Returns rows from first query that don't appear in subsequent queries.
+
+```typescript
+except<T extends MySqlSelect>(
+  ...queries: T[]
+): MySqlSelectWithout<this, 'union' | 'unionAll' | 'intersect' | 'except'>
+```
+
+---
+
+## Insert Query Builder
+
+### MySqlInsertBuilder
+
+Builds INSERT queries with support for bulk inserts and conflict handling.
+
+#### values()
+
+Specifies the values to insert.
+
+```typescript
+values(value: InsertValue): MySqlInsertBase
+values(values: InsertValue[]): MySqlInsertBase
+```
+
+#### Examples
+
+```typescript
+// Insert single row
+await db.insert(users).values({
+  name: 'John',
+  email: 'john@example.com'
+});
+
+// Insert multiple rows
+await db.insert(users).values([
+  { name: 'John', email: 'john@example.com' },
+  { name: 'Jane', email: 'jane@example.com' }
+]);
+
+// With SQL expressions
+await db.insert(users).values({
+  name: 'John',
+  createdAt: sql`NOW()`
+});
+```
+
+---
+
+#### select()
+
+Inserts data from a SELECT query.
+
+```typescript
+select(selectQuery: MySqlSelect | ((qb: QueryBuilder) => MySqlSelect)): MySqlInsertBase
+```
+
+#### Examples
+
+```typescript
+// Insert from select
+await db.insert(archivedUsers)
+  .select(db.select().from(users).where(eq(users.archived, true)));
+
+// With query builder
+await db.insert(userBackup)
+  .select((qb) => qb.select().from(users));
+```
+
+---
+
+#### ignore()
+
+Ignores duplicate key errors.
+
+```typescript
+ignore(): this
+```
+
+#### Examples
+
+```typescript
+await db.insert(users)
+  .ignore()
+  .values({ id: 1, name: 'John' });
+// Will not throw error if id=1 already exists
+```
+
+---
+
+#### onDuplicateKeyUpdate()
+
+Updates rows on duplicate key.
+
+```typescript
+onDuplicateKeyUpdate(config: {
+  set: UpdateSet;
+  where?: SQL;
+}): this
+```
+
+#### Examples
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+// Update on duplicate
+await db.insert(users)
+  .values({ id: 1, name: 'John', loginCount: 1 })
+  .onDuplicateKeyUpdate({
+    set: { loginCount: sql`${users.loginCount} + 1` }
+  });
+
+// Conditional update
+await db.insert(users)
+  .values({ id: 1, name: 'John' })
+  .onDuplicateKeyUpdate({
+    set: { name: sql`VALUES(name)` },
+    where: sql`${users.updatedAt} < NOW()`
+  });
+```
+
+---
+
+## Update Query Builder
+
+### MySqlUpdateBuilder
+
+Builds UPDATE queries with filtering and ordering.
+
+#### set()
+
+Specifies the values to update.
+
+```typescript
+set(values: UpdateSet): MySqlUpdateBase
+```
+
+#### Examples
+
+```typescript
+// Update single column
+await db.update(users)
+  .set({ name: 'John Updated' })
+  .where(eq(users.id, 1));
+
+// Update multiple columns
+await db.update(users)
+  .set({
+    name: 'John',
+    email: 'john@example.com',
+    updatedAt: new Date()
+  })
+  .where(eq(users.id, 1));
+
+// With SQL expressions
+await db.update(users)
+  .set({
+    loginCount: sql`${users.loginCount} + 1`,
+    lastLogin: sql`NOW()`
+  })
+  .where(eq(users.id, 1));
+```
+
+---
+
+#### where()
+
+Filters which rows to update.
+
+```typescript
+where(condition: SQL): this
+```
+
+<Warning>
+Always use `where()` with updates unless you intend to update all rows.
+</Warning>
+
+#### Examples
+
+```typescript
+// Update specific row
+await db.update(users)
+  .set({ status: 'inactive' })
+  .where(eq(users.id, 1));
+
+// Update multiple rows
+await db.update(users)
+  .set({ status: 'inactive' })
+  .where(gt(users.lastLogin, sql`DATE_SUB(NOW(), INTERVAL 1 YEAR)`));
+```
+
+---
+
+#### orderBy()
+
+Orders the rows before updating (used with LIMIT).
+
+```typescript
+orderBy(...columns: (MySqlColumn | SQL)[]): this
+```
+
+---
+
+#### limit()
+
+Limits the number of rows to update.
+
+```typescript
+limit(limit: number | Placeholder): this
+```
+
+#### Examples
+
+```typescript
+// Update only first 10 matching rows
+await db.update(users)
+  .set({ verified: true })
+  .where(eq(users.verified, false))
+  .orderBy(users.createdAt)
+  .limit(10);
+```
+
+---
+
+## Delete Query Builder
+
+### MySqlDeleteBase
+
+Builds DELETE queries with filtering.
+
+#### where()
+
+Filters which rows to delete.
+
+```typescript
+where(condition: SQL): this
+```
+
+<Warning>
+Always use `where()` with deletes unless you intend to delete all rows.
+</Warning>
+
+#### Examples
+
+```typescript
+import { eq, and, lt, sql } from 'drizzle-orm';
+
+// Delete specific row
+await db.delete(users).where(eq(users.id, 1));
+
+// Delete multiple rows
+await db.delete(users)
+  .where(eq(users.status, 'deleted'));
+
+// Delete with complex conditions
+await db.delete(logs)
+  .where(and(
+    lt(logs.createdAt, sql`DATE_SUB(NOW(), INTERVAL 30 DAY)`),
+    eq(logs.level, 'debug')
+  ));
+```
+
+---
+
+#### orderBy()
+
+Orders rows before deletion (used with LIMIT).
+
+```typescript
+orderBy(...columns: (MySqlColumn | SQL)[]): this
+```
+
+---
+
+#### limit()
+
+Limits the number of rows to delete.
+
+```typescript
+limit(limit: number | Placeholder): this
+```
+
+#### Examples
+
+```typescript
+// Delete oldest 100 logs
+await db.delete(logs)
+  .orderBy(logs.createdAt)
+  .limit(100);
+
+// Delete specific count
+await db.delete(tempData)
+  .where(eq(tempData.processed, true))
+  .limit(1000);
+```
+
+---
+
+## Query Execution
+
+All query builders support these execution methods:
+
+### execute()
+
+Executes the query and returns the result.
+
+```typescript
+await db.select().from(users).execute();
+```
+
+---
+
+### prepare()
+
+Prepares a query for reuse with different parameters.
+
+```typescript
+const stmt = db.select()
+  .from(users)
+  .where(eq(users.id, sql.placeholder('id')))
+  .prepare();
+
+await stmt.execute({ id: 1 });
+await stmt.execute({ id: 2 });
+```
+
+---
+
+### then()
+
+Query builders are thenable, so you can await them directly.
+
+```typescript
+const users = await db.select().from(users);
+```
+
+---
+
+## Subqueries
+
+### as()
+
+Converts a query into a subquery with an alias.
+
+```typescript
+const sq = db.select({ id: users.id, name: users.name })
+  .from(users)
+  .as('sq');
+
+const result = await db.select()
+  .from(sq)
+  .where(eq(sq.id, 1));
+```
+
+---
+
+## Type Safety
+
+All query builders maintain full type safety:
+
+```typescript
+const result = await db.select({
+  id: users.id,
+  name: users.name
+}).from(users);
+
+// result is typed as: { id: number; name: string }[]
+
+const user = result[0];
+user.id;   // number
+user.name; // string
+user.email; // Error: Property 'email' does not exist
+```

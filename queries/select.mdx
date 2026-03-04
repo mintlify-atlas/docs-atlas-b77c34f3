@@ -1,0 +1,357 @@
+---
+title: Select Queries
+description: Learn how to query data with Drizzle ORM's type-safe select query builder, including filtering, ordering, limiting, and advanced select operations.
+---
+
+Drizzle ORM provides a powerful and type-safe query builder for selecting data from your database. The select query builder supports a wide range of operations including filtering, joining, grouping, and ordering.
+
+## Basic Select
+
+Select all columns from a table:
+
+```typescript
+import { db } from './db';
+import { users } from './schema';
+
+// Select all columns from users
+const allUsers = await db.select().from(users);
+```
+
+## Partial Select
+
+Select specific columns from a table:
+
+```typescript
+// Select only id and name
+const userNames = await db.select({
+  id: users.id,
+  name: users.name,
+}).from(users);
+```
+
+## Filtering with Where
+
+Use the `where()` method to filter results:
+
+<CodeGroup>
+
+```typescript Basic Filtering
+import { eq, gt, lt } from 'drizzle-orm';
+
+// Select users with a specific id
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1));
+
+// Select users older than 18
+const adults = await db.select()
+  .from(users)
+  .where(gt(users.age, 18));
+```
+
+```typescript Multiple Conditions
+import { and, or, eq, gt } from 'drizzle-orm';
+
+// Select users with AND condition
+const result = await db.select()
+  .from(users)
+  .where(and(
+    eq(users.active, true),
+    gt(users.age, 18)
+  ));
+
+// Select users with OR condition
+const result = await db.select()
+  .from(users)
+  .where(or(
+    eq(users.role, 'admin'),
+    eq(users.role, 'moderator')
+  ));
+```
+
+</CodeGroup>
+
+## Ordering Results
+
+Use `orderBy()` to sort query results:
+
+```typescript
+import { asc, desc } from 'drizzle-orm';
+
+// Order by name ascending
+const users = await db.select()
+  .from(users)
+  .orderBy(asc(users.name));
+
+// Order by created date descending
+const recentUsers = await db.select()
+  .from(users)
+  .orderBy(desc(users.createdAt));
+
+// Multiple order by clauses
+const sortedUsers = await db.select()
+  .from(users)
+  .orderBy(asc(users.role), desc(users.createdAt));
+```
+
+## Limiting and Offsetting
+
+Control the number of results returned:
+
+```typescript
+// Get first 10 users
+const firstTen = await db.select()
+  .from(users)
+  .limit(10);
+
+// Pagination: skip first 20, get next 10
+const page3 = await db.select()
+  .from(users)
+  .limit(10)
+  .offset(20);
+```
+
+## Distinct
+
+Select only distinct values:
+
+<CodeGroup>
+
+```typescript Basic Distinct
+// Get unique user roles
+const roles = await db.selectDistinct({ role: users.role })
+  .from(users);
+```
+
+```typescript PostgreSQL - Distinct On
+import { db } from './db';
+
+// PostgreSQL only: distinct on specific columns
+const latestPerRole = await db.selectDistinctOn([users.role], {
+  role: users.role,
+  name: users.name,
+  createdAt: users.createdAt,
+})
+  .from(users)
+  .orderBy(users.role, desc(users.createdAt));
+```
+
+</CodeGroup>
+
+## Group By
+
+Group results by one or more columns:
+
+```typescript
+import { count } from 'drizzle-orm';
+
+// Count users by role
+const usersByRole = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role);
+```
+
+## Having Clause
+
+Filter grouped results:
+
+```typescript
+import { count, gt } from 'drizzle-orm';
+
+// Get roles with more than 5 users
+const popularRoles = await db.select({
+  role: users.role,
+  count: count(),
+})
+  .from(users)
+  .groupBy(users.role)
+  .having(({ count }) => gt(count, 5));
+```
+
+## Set Operations
+
+Combine multiple select queries:
+
+<CodeGroup>
+
+```typescript Union
+// Combine results and remove duplicates
+const combined = await db.select({ name: users.name })
+  .from(users)
+  .union(
+    db.select({ name: customers.name }).from(customers)
+  );
+```
+
+```typescript Union All
+// Combine results keeping duplicates
+const all = await db.select({ name: users.name })
+  .from(users)
+  .unionAll(
+    db.select({ name: customers.name }).from(customers)
+  );
+```
+
+```typescript Intersect
+// Get only rows present in both queries
+const common = await db.select({ email: users.email })
+  .from(users)
+  .intersect(
+    db.select({ email: subscribers.email }).from(subscribers)
+  );
+```
+
+```typescript Except
+// Get rows from first query not in second
+const unique = await db.select({ email: users.email })
+  .from(users)
+  .except(
+    db.select({ email: unsubscribed.email }).from(unsubscribed)
+  );
+```
+
+</CodeGroup>
+
+## Conditional Where
+
+Build dynamic queries with conditional logic:
+
+```typescript
+const filters = {
+  role: 'admin',
+  minAge: 18,
+};
+
+const conditions = [];
+if (filters.role) {
+  conditions.push(eq(users.role, filters.role));
+}
+if (filters.minAge) {
+  conditions.push(gt(users.age, filters.minAge));
+}
+
+const result = await db.select()
+  .from(users)
+  .where(and(...conditions));
+```
+
+## With Clause (CTE)
+
+Use Common Table Expressions:
+
+```typescript
+const activeUsers = db.$with('active_users').as(
+  db.select().from(users).where(eq(users.active, true))
+);
+
+const result = await db.with(activeUsers)
+  .select()
+  .from(activeUsers);
+```
+
+## For Update (PostgreSQL)
+
+Lock rows for update:
+
+```typescript
+// Lock selected rows
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('update');
+
+// Lock with NOWAIT
+const user = await db.select()
+  .from(users)
+  .where(eq(users.id, 1))
+  .for('update', { noWait: true });
+
+// Lock specific tables
+const result = await db.select()
+  .from(users)
+  .leftJoin(posts, eq(users.id, posts.userId))
+  .for('update', { of: users });
+```
+
+## Conditional Operators Reference
+
+<CardGroup cols={2}>
+
+<Card title="Comparison" icon="equals">
+  - `eq()` - Equal to
+  - `ne()` - Not equal to
+  - `gt()` - Greater than
+  - `gte()` - Greater than or equal
+  - `lt()` - Less than
+  - `lte()` - Less than or equal
+</Card>
+
+<Card title="Logical" icon="shuffle">
+  - `and()` - Combine with AND
+  - `or()` - Combine with OR
+  - `not()` - Negate condition
+</Card>
+
+<Card title="Patterns" icon="magnifying-glass">
+  - `like()` - Pattern matching
+  - `ilike()` - Case-insensitive pattern
+  - `notLike()` - Not matching pattern
+  - `notIlike()` - Case-insensitive not matching
+</Card>
+
+<Card title="Ranges & Sets" icon="list">
+  - `between()` - Between two values
+  - `notBetween()` - Not between values
+  - `inArray()` - In array of values
+  - `notInArray()` - Not in array
+</Card>
+
+<Card title="Null Checks" icon="circle-question">
+  - `isNull()` - Is NULL
+  - `isNotNull()` - Is NOT NULL
+</Card>
+
+<Card title="Subqueries" icon="diagram-project">
+  - `exists()` - Subquery has results
+  - `notExists()` - Subquery has no results
+</Card>
+
+</CardGroup>
+
+## Type Safety
+
+Drizzle ensures complete type safety:
+
+```typescript
+// TypeScript knows the exact shape of the result
+const users = await db.select({
+  id: users.id,
+  name: users.name,
+}).from(users);
+
+// users is typed as: { id: number; name: string; }[]
+```
+
+<Note>
+All query methods are fully typed, providing autocomplete and compile-time type checking.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Joins" href="/queries/joins" icon="link">
+    Learn about joining tables together
+  </Card>
+  <Card title="Aggregations" href="/queries/aggregations" icon="chart-simple">
+    Use aggregate functions like count, sum, avg
+  </Card>
+  <Card title="Subqueries" href="/queries/subqueries" icon="diagram-nested">
+    Write complex nested queries
+  </Card>
+  <Card title="Insert" href="/queries/insert" icon="plus">
+    Insert data into tables
+  </Card>
+</CardGroup>

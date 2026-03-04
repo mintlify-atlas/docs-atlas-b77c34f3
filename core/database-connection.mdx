@@ -1,0 +1,418 @@
+---
+title: Database Connection
+description: Connect Drizzle ORM to your database with type-safe configuration and driver support
+---
+
+## Overview
+
+Drizzle supports multiple database drivers and connection methods. Choose the driver that matches your runtime environment and database.
+
+## PostgreSQL
+
+### node-postgres (pg)
+
+The standard PostgreSQL driver for Node.js:
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install drizzle-orm pg
+    npm install -D @types/pg
+    ```
+  </Step>
+
+  <Step title="Create connection">
+    ```typescript
+    import { drizzle } from 'drizzle-orm/node-postgres';
+    import { Pool } from 'pg';
+    import * as schema from './schema';
+
+    // Using Pool (recommended for multiple connections)
+    const pool = new Pool({
+      host: 'localhost',
+      port: 5432,
+      user: 'postgres',
+      password: 'password',
+      database: 'mydb',
+    });
+
+    export const db = drizzle({ client: pool, schema });
+    ```
+  </Step>
+
+  <Step title="Use connection string">
+    ```typescript
+    // Alternative: using connection string
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+
+    export const db = drizzle({ client: pool, schema });
+
+    // Or even simpler
+    export const db = drizzle(process.env.DATABASE_URL, { schema });
+    ```
+  </Step>
+</Steps>
+
+### Postgres.js
+
+A lightweight PostgreSQL driver:
+
+```typescript
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from './schema';
+
+const client = postgres(process.env.DATABASE_URL!);
+export const db = drizzle({ client, schema });
+```
+
+### Neon Serverless
+
+For Neon's serverless PostgreSQL:
+
+```typescript
+import { drizzle } from 'drizzle-orm/neon-serverless';
+import { Pool } from '@neondatabase/serverless';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle({ client: pool, schema });
+```
+
+### Vercel Postgres
+
+Optimized for Vercel deployments:
+
+```typescript
+import { drizzle } from 'drizzle-orm/vercel-postgres';
+import { sql } from '@vercel/postgres';
+import * as schema from './schema';
+
+export const db = drizzle({ client: sql, schema });
+```
+
+## MySQL
+
+### mysql2
+
+The MySQL driver with prepared statement support:
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install drizzle-orm mysql2
+    ```
+  </Step>
+
+  <Step title="Create connection">
+    ```typescript
+    import { drizzle } from 'drizzle-orm/mysql2';
+    import mysql from 'mysql2/promise';
+    import * as schema from './schema';
+
+    const connection = await mysql.createConnection({
+      host: 'localhost',
+      user: 'root',
+      password: 'password',
+      database: 'mydb',
+    });
+
+    export const db = drizzle({ client: connection, schema, mode: 'default' });
+    ```
+  </Step>
+
+  <Step title="Configure mode">
+    ```typescript
+    // For PlanetScale (no foreign keys)
+    export const db = drizzle({ 
+      client: connection, 
+      schema, 
+      mode: 'planetscale' 
+    });
+
+    // Default mode (with foreign keys)
+    export const db = drizzle({ 
+      client: connection, 
+      schema, 
+      mode: 'default' 
+    });
+    ```
+  </Step>
+</Steps>
+
+<Note>
+The `mode` parameter is required when providing a schema. Use `'planetscale'` for databases without foreign key support, or `'default'` for standard MySQL.
+</Note>
+
+### PlanetScale Serverless
+
+```typescript
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import { Client } from '@planetscale/database';
+import * as schema from './schema';
+
+const client = new Client({
+  url: process.env.DATABASE_URL,
+});
+
+export const db = drizzle({ client, schema });
+```
+
+## SQLite
+
+### better-sqlite3
+
+Synchronous SQLite driver for Node.js:
+
+```typescript
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import * as schema from './schema';
+
+const sqlite = new Database('sqlite.db');
+export const db = drizzle({ client: sqlite, schema });
+```
+
+### Bun SQLite
+
+Native SQLite for Bun runtime:
+
+```typescript
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { Database } from 'bun:sqlite';
+import * as schema from './schema';
+
+const sqlite = new Database('sqlite.db');
+export const db = drizzle({ client: sqlite, schema });
+```
+
+### libSQL (Turso)
+
+For distributed SQLite:
+
+```typescript
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import * as schema from './schema';
+
+const client = createClient({
+  url: process.env.TURSO_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN!,
+});
+
+export const db = drizzle({ client, schema });
+```
+
+## Configuration Options
+
+### Logger
+
+Enable SQL query logging:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Enable default logger
+export const db = drizzle({ 
+  client: pool, 
+  logger: true 
+});
+
+// Custom logger
+export const dbCustomLogger = drizzle({ 
+  client: pool,
+  logger: {
+    logQuery(query: string, params: unknown[]) {
+      console.log('Query:', query);
+      console.log('Params:', params);
+    },
+  },
+});
+```
+
+### Schema
+
+Providing your schema enables the relational query API:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// With schema - enables db.query API
+export const db = drizzle({ client: pool, schema });
+
+// Without schema - only db.select(), db.insert(), etc.
+export const dbNoSchema = drizzle(pool);
+```
+
+### Casing
+
+Configure column name conversion:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Convert camelCase to snake_case
+export const db = drizzle({ 
+  client: pool,
+  casing: 'snake_case',
+});
+```
+
+## Connection Patterns
+
+### Singleton Pattern
+
+Create a single database instance:
+
+```typescript db.ts
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+let db: ReturnType<typeof drizzle>;
+
+if (!global.db) {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 20,
+  });
+  global.db = drizzle({ client: pool, schema });
+}
+
+db = global.db;
+
+export { db };
+```
+
+### Connection Pooling
+
+Configure pool settings for optimal performance:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20, // Maximum pool size
+  idleTimeoutMillis: 30000, // Close idle connections after 30s
+  connectionTimeoutMillis: 2000, // Return error after 2s if connection not available
+});
+
+export const db = drizzle({ client: pool, schema });
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  await pool.end();
+});
+```
+
+### Read Replicas
+
+Distribute read queries across replicas:
+
+```typescript
+import { drizzle, withReplicas } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const primaryPool = new Pool({ connectionString: process.env.PRIMARY_URL });
+const replica1Pool = new Pool({ connectionString: process.env.REPLICA_1_URL });
+const replica2Pool = new Pool({ connectionString: process.env.REPLICA_2_URL });
+
+const primary = drizzle({ client: primaryPool, schema });
+const replica1 = drizzle({ client: replica1Pool, schema });
+const replica2 = drizzle({ client: replica2Pool, schema });
+
+export const db = withReplicas(primary, [replica1, replica2]);
+
+// Read queries use replicas
+const users = await db.select().from(schema.users);
+
+// Write queries use primary
+const newUser = await db.insert(schema.users).values({ name: 'John' });
+
+// Force primary for reads
+const freshData = await db.$primary.select().from(schema.users);
+```
+
+## Environment Variables
+
+Store connection strings securely:
+
+```bash .env
+# PostgreSQL
+DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+
+# MySQL
+DATABASE_URL=mysql://user:password@localhost:3306/dbname
+
+# SQLite (file path)
+DATABASE_URL=./data/sqlite.db
+```
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
+}
+
+export const db = drizzle(process.env.DATABASE_URL);
+```
+
+## TypeScript Types
+
+The database instance is fully typed:
+
+```typescript
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import * as schema from './schema';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Type is inferred from schema
+export const db = drizzle({ client: pool, schema });
+
+// Access the client if needed
+const client = db.$client; // Type: Pool
+```
+
+## Best Practices
+
+<Note>
+- **Use connection pooling**: Especially for serverless and high-traffic applications
+- **Close connections**: Implement graceful shutdown to close database connections
+- **Environment variables**: Never hardcode credentials
+- **Schema parameter**: Include schema for type-safe relational queries
+- **Logging**: Enable in development, disable in production for performance
+</Note>
+
+<Warning>
+Always use environment variables for database credentials. Never commit credentials to version control.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Queries" icon="database" href="/core/queries">
+    Learn how to query your database
+  </Card>
+  <Card title="Migrations" icon="arrows-rotate" href="/core/migrations">
+    Set up database migrations
+  </Card>
+</CardGroup>

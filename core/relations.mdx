@@ -1,0 +1,534 @@
+---
+title: Relations
+description: Define and query relationships between tables with Drizzle ORM's relational query API
+---
+
+## Overview
+
+Drizzle ORM provides a powerful relational query system that allows you to define relationships between tables and fetch related data with type-safe, intuitive syntax.
+
+## Defining Relations
+
+Relations are defined separately from table schemas using the `relations` function:
+
+### One-to-Many
+
+Define a one-to-many relationship:
+
+```typescript schema.ts
+import { pgTable, serial, text, integer } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+// Tables
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  authorId: integer('author_id').notNull().references(() => users.id),
+});
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  posts: many(posts),
+}));
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.authorId],
+    references: [users.id],
+  }),
+}));
+```
+
+### One-to-One
+
+Define a one-to-one relationship:
+
+```typescript
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const profiles = pgTable('profiles', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id).unique(),
+  bio: text('bio'),
+});
+
+export const usersRelations = relations(users, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [users.id],
+    references: [profiles.userId],
+  }),
+}));
+
+export const profilesRelations = relations(profiles, ({ one }) => ({
+  user: one(users, {
+    fields: [profiles.userId],
+    references: [users.id],
+  }),
+}));
+```
+
+### Many-to-Many
+
+Use a junction table for many-to-many relationships:
+
+```typescript
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+export const groups = pgTable('groups', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+});
+
+// Junction table
+export const usersToGroups = pgTable('users_to_groups', {
+  userId: integer('user_id').notNull().references(() => users.id),
+  groupId: integer('group_id').notNull().references(() => groups.id),
+}, (table) => [{
+  pk: primaryKey({ columns: [table.userId, table.groupId] }),
+}]);
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  usersToGroups: many(usersToGroups),
+}));
+
+export const groupsRelations = relations(groups, ({ many }) => ({
+  usersToGroups: many(usersToGroups),
+}));
+
+export const usersToGroupsRelations = relations(usersToGroups, ({ one }) => ({
+  user: one(users, {
+    fields: [usersToGroups.userId],
+    references: [users.id],
+  }),
+  group: one(groups, {
+    fields: [usersToGroups.groupId],
+    references: [groups.id],
+  }),
+}));
+```
+
+### Composite Foreign Keys
+
+Define relations with composite keys:
+
+```typescript
+export const users = pgTable('users', {
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
+}, (table) => [{
+  pk: primaryKey({ columns: [table.firstName, table.lastName] }),
+}]);
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  authorFirstName: text('author_first_name').notNull(),
+  authorLastName: text('author_last_name').notNull(),
+});
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  author: one(users, {
+    fields: [posts.authorFirstName, posts.authorLastName],
+    references: [users.firstName, users.lastName],
+  }),
+}));
+```
+
+## Relational Queries
+
+Once relations are defined, use the relational query API for intuitive data fetching:
+
+### Find First
+
+Find a single record:
+
+```typescript
+import { db } from './db';
+
+// Find user by ID
+const user = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, 1),
+});
+
+// Find user with posts
+const userWithPosts = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, 1),
+  with: {
+    posts: true,
+  },
+});
+// Type: { id: number; name: string; posts: Post[] }
+```
+
+### Find Many
+
+Find multiple records:
+
+```typescript
+// Find all users
+const allUsers = await db.query.users.findMany();
+
+// Find users with filter
+const activeUsers = await db.query.users.findMany({
+  where: (users, { eq }) => eq(users.active, true),
+});
+
+// Find users with posts
+const usersWithPosts = await db.query.users.findMany({
+  with: {
+    posts: true,
+  },
+});
+```
+
+### Nested Relations
+
+Fetch deeply nested relationships:
+
+```typescript
+// User with posts and comments on those posts
+const user = await db.query.users.findFirst({
+  with: {
+    posts: {
+      with: {
+        comments: true,
+      },
+    },
+  },
+});
+
+// Multiple levels of nesting
+const user = await db.query.users.findFirst({
+  with: {
+    posts: {
+      with: {
+        comments: {
+          with: {
+            author: true,
+          },
+        },
+      },
+    },
+    profile: true,
+  },
+});
+```
+
+### Filtering Relations
+
+Filter, order, and limit related records:
+
+```typescript
+import { gte, desc } from 'drizzle-orm';
+
+// User with recent posts
+const user = await db.query.users.findFirst({
+  with: {
+    posts: {
+      where: (posts, { gte }) => gte(posts.createdAt, new Date('2024-01-01')),
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+      limit: 10,
+    },
+  },
+});
+
+// Multiple filters
+const user = await db.query.users.findFirst({
+  with: {
+    posts: {
+      where: (posts, { and, eq, gte }) => and(
+        eq(posts.published, true),
+        gte(posts.views, 100)
+      ),
+    },
+  },
+});
+```
+
+### Selecting Columns
+
+Choose specific columns to return:
+
+```typescript
+// Select specific columns from main table
+const users = await db.query.users.findMany({
+  columns: {
+    id: true,
+    name: true,
+    // email excluded
+  },
+});
+
+// Select specific columns from relations
+const usersWithPostTitles = await db.query.users.findMany({
+  columns: {
+    id: true,
+    name: true,
+  },
+  with: {
+    posts: {
+      columns: {
+        id: true,
+        title: true,
+        // content excluded
+      },
+    },
+  },
+});
+```
+
+### Extras
+
+Add computed fields to queries:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+const users = await db.query.users.findMany({
+  extras: {
+    lowerName: sql<string>`lower(${users.name})`.as('lower_name'),
+  },
+});
+// Type includes: { ..., lowerName: string }
+
+// Use fields in extras
+const users = await db.query.users.findMany({
+  extras: (fields, operators) => ({
+    fullName: sql`${fields.firstName} || ' ' || ${fields.lastName}`.as('full_name'),
+  }),
+});
+```
+
+## Where Operators
+
+All standard operators are available in relational queries:
+
+```typescript
+const users = await db.query.users.findMany({
+  where: (users, { eq, ne, gt, gte, lt, lte, like, ilike, inArray, isNull, isNotNull, and, or, not, between }) => {
+    // Equality
+    eq(users.id, 1)
+    ne(users.role, 'admin')
+    
+    // Comparison
+    gt(users.age, 18)
+    gte(users.age, 18)
+    lt(users.age, 65)
+    lte(users.age, 65)
+    between(users.age, 18, 65)
+    
+    // Pattern matching
+    like(users.email, '%@gmail.com')
+    ilike(users.name, '%john%') // case-insensitive
+    
+    // Arrays
+    inArray(users.id, [1, 2, 3])
+    
+    // Null checks
+    isNull(users.deletedAt)
+    isNotNull(users.email)
+    
+    // Logical operators
+    and(
+      eq(users.active, true),
+      gte(users.age, 18)
+    )
+    or(
+      eq(users.role, 'admin'),
+      eq(users.role, 'moderator')
+    )
+    not(eq(users.banned, true))
+  },
+});
+```
+
+## Order By
+
+```typescript
+const users = await db.query.users.findMany({
+  orderBy: (users, { asc, desc }) => [desc(users.createdAt), asc(users.name)],
+});
+
+// Order relations
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
+    },
+  },
+});
+```
+
+## Limit and Offset
+
+```typescript
+// Pagination
+const page1 = await db.query.users.findMany({
+  limit: 10,
+  offset: 0,
+});
+
+const page2 = await db.query.users.findMany({
+  limit: 10,
+  offset: 10,
+});
+
+// Limit nested relations
+const users = await db.query.users.findMany({
+  with: {
+    posts: {
+      limit: 5, // Only 5 posts per user
+    },
+  },
+});
+```
+
+## Self-Referencing Relations
+
+Define hierarchical relationships:
+
+```typescript
+export const categories = pgTable('categories', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  parentId: integer('parent_id'),
+});
+
+export const categoriesRelations = relations(categories, ({ one, many }) => ({
+  parent: one(categories, {
+    fields: [categories.parentId],
+    references: [categories.id],
+    relationName: 'parent_child',
+  }),
+  children: many(categories, {
+    relationName: 'parent_child',
+  }),
+}));
+
+// Query
+const category = await db.query.categories.findFirst({
+  with: {
+    parent: true,
+    children: true,
+  },
+});
+```
+
+## Relation Names
+
+Disambiguate multiple relations to the same table:
+
+```typescript
+export const messages = pgTable('messages', {
+  id: serial('id').primaryKey(),
+  senderId: integer('sender_id').notNull(),
+  receiverId: integer('receiver_id').notNull(),
+  content: text('content').notNull(),
+});
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  sender: one(users, {
+    fields: [messages.senderId],
+    references: [users.id],
+    relationName: 'sent_messages',
+  }),
+  receiver: one(users, {
+    fields: [messages.receiverId],
+    references: [users.id],
+    relationName: 'received_messages',
+  }),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+  sentMessages: many(messages, { relationName: 'sent_messages' }),
+  receivedMessages: many(messages, { relationName: 'received_messages' }),
+}));
+```
+
+## Nullable Relations
+
+Relations automatically handle nullable foreign keys:
+
+```typescript
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  editorId: integer('editor_id'), // Nullable
+});
+
+export const postsRelations = relations(posts, ({ one }) => ({
+  editor: one(users, {
+    fields: [posts.editorId],
+    references: [users.id],
+  }),
+}));
+
+const post = await db.query.posts.findFirst({
+  with: { editor: true },
+});
+// Type: { ..., editor: User | null }
+```
+
+## Best Practices
+
+<Note>
+- **Define all relations**: Even if you only query from one side, define both sides for completeness
+- **Use relation names**: For multiple relations to the same table, always specify `relationName`
+- **Optimize queries**: Use `columns` to select only needed fields
+- **Pagination**: Always use `limit` and `offset` for large datasets
+- **Filter relations**: Filter nested relations to reduce data transfer
+</Note>
+
+<Warning>
+Relational queries can become slow with deeply nested relations. Consider using separate queries or implementing pagination for nested data.
+</Warning>
+
+## Comparison with SQL Joins
+
+<Tabs>
+  <Tab title="Relational API">
+    ```typescript
+    const users = await db.query.users.findMany({
+      with: {
+        posts: {
+          where: (posts, { eq }) => eq(posts.published, true),
+        },
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="Query Builder">
+    ```typescript
+    import { eq } from 'drizzle-orm';
+
+    const users = await db.select()
+      .from(users)
+      .leftJoin(posts, eq(users.id, posts.authorId))
+      .where(eq(posts.published, true));
+    ```
+  </Tab>
+</Tabs>
+
+The relational API provides cleaner syntax and automatic result grouping, while the query builder offers more control over the SQL output.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Migrations" icon="arrows-rotate" href="/core/migrations">
+    Learn how to manage schema changes
+  </Card>
+  <Card title="Transactions" icon="rotate" href="/core/transactions">
+    Execute atomic database operations
+  </Card>
+</CardGroup>
